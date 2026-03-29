@@ -1,0 +1,3458 @@
+---
+title: "DApipe_HvGerm_Exp6"
+author: "Guido Giordano"
+date: "2025-07-31"
+output: html_document
+---
+#This is the pipeline for data analysis for barley germination experiment 6 
+
+#Load packages
+```{r}
+# List packages (duplicates removed)
+pkgs <- c(
+  "AnnotationDbi","org.At.tair.db","clusterProfiler","dplyr","readr","tidyr",
+  "ggplot2","ggbreak","cowplot","stringr","kableExtra","mice","reshape2",
+  "data.table","cleaver","Mfuzz","Biobase","textshape","gridExtra","grid",
+  "pcaMethods","impute","pheatmap","ggh4x","patchwork"
+)
+
+# Install BiocManager if missing
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager", repos = "https://cloud.r-project.org")
+
+# CRAN vs Bioconductor separation
+cran_pkgs <- pkgs[!pkgs %in% rownames(BiocManager::available())]
+bioc_pkgs <- pkgs[pkgs %in% rownames(BiocManager::available())]
+
+# Install missing CRAN packages
+install_if_missing <- function(p, from_bioc = FALSE) {
+  if (!requireNamespace(p, quietly = TRUE)) {
+    if (from_bioc) {
+      BiocManager::install(p, ask = FALSE, update = FALSE)
+    } else {
+      install.packages(p, repos = "https://cloud.r-project.org")
+    }
+  }
+}
+
+# Install missing ones
+lapply(cran_pkgs, install_if_missing, from_bioc = FALSE)
+lapply(bioc_pkgs, install_if_missing, from_bioc = TRUE)
+
+# Load all
+lapply(pkgs, function(p) library(p, character.only = TRUE))
+```
+#Calculate the digestion efficiency. This is directly connected with the goodness of protein identification. 
+
+```{r}
+#Load evidence (TD) file. 
+
+evidence_b1 <- read.table("../../../R_import/Hv6/evidences/evidence_b1.txt", header = TRUE, sep = "\t")
+evidence_b2 <- read.table("../../../R_import/Hv6/evidences/evidence_b2.txt", header = TRUE, sep = "\t")
+evidence_b3 <- read.table("../../../R_import/Hv6/evidences/evidence_b3.txt", header = TRUE, sep = "\t")
+evidence_b4 <- read.table("../../../R_import/Hv6/evidences/evidence_b4.txt", header = TRUE, sep = "\t")
+
+
+#Generate a bar plot from the column missed cleavages
+# Batch 1
+Try_Dig_b1 <- ggplot(evidence_b1, aes(x = factor(Missed.cleavages))) +
+  geom_bar(fill = "#105CB6", color = "black") +
+  labs(title = "Tryptic digestion efficiency (Hv6_batch1)",
+       x = "Missed Cleavages",
+       y = "Count") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, family = "", face = "plain"),  
+        axis.title = element_text(size = 12, family = "", face = "plain"),
+        axis.text = element_text(size = 12, family = "", face = "plain")) +
+  theme(plot.title = element_text(hjust = 0.5, margin = margin(b = 10)),
+        axis.title.x = element_text(margin = margin(t = 8)),
+        axis.title.y = element_text(margin = margin(r = 15)))
+ggsave("../../../R_export/Hv6/trypdig/Hv6_b1_trypdig.png")
+
+# Batch 2
+Try_Dig_b2 <- ggplot(evidence_b2, aes(x = factor(Missed.cleavages))) +
+  geom_bar(fill = "#105CB6", color = "black") +
+  labs(title = "Tryptic digestion efficiency (Hv6_batch2)",
+       x = "Missed Cleavages",
+       y = "Count") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, family = "", face = "plain"),  
+        axis.title = element_text(size = 12, family = "", face = "plain"),
+        axis.text = element_text(size = 12, family = "", face = "plain")) +
+  theme(plot.title = element_text(hjust = 0.5, margin = margin(b = 10)),
+        axis.title.x = element_text(margin = margin(t = 8)),
+        axis.title.y = element_text(margin = margin(r = 15)))
+ggsave("../../../R_export/Hv6/trypdig/Hv6_b2_trypdig.png")
+
+# Batch 3
+Try_Dig_b3 <- ggplot(evidence_b3, aes(x = factor(Missed.cleavages))) +
+  geom_bar(fill = "#105CB6", color = "black") +
+  labs(title = "Tryptic digestion efficiency (Hv6_batch3)",
+       x = "Missed Cleavages",
+       y = "Count") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, family = "", face = "plain"),  
+        axis.title = element_text(size = 12, family = "", face = "plain"),
+        axis.text = element_text(size = 12, family = "", face = "plain")) +
+  theme(plot.title = element_text(hjust = 0.5, margin = margin(b = 10)),
+        axis.title.x = element_text(margin = margin(t = 8)),
+        axis.title.y = element_text(margin = margin(r = 15)))
+ggsave("../../../R_export/Hv6/trypdig/Hv6_b3_trypdig.png")
+
+# Batch 4
+Try_Dig_b4 <- ggplot(evidence_b4, aes(x = factor(Missed.cleavages))) +
+  geom_bar(fill = "#105CB6", color = "black") +
+  labs(title = "Tryptic digestion efficiency (Hv6_batch4)",
+       x = "Missed Cleavages",
+       y = "Count") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, family = "", face = "plain"),  
+        axis.title = element_text(size = 12, family = "", face = "plain"),
+        axis.text = element_text(size = 12, family = "", face = "plain")) +
+  theme(plot.title = element_text(hjust = 0.5, margin = margin(b = 10)),
+        axis.title.x = element_text(margin = margin(t = 8)),
+        axis.title.y = element_text(margin = margin(r = 15)))
+ggsave("../../../R_export/Hv6/trypdig/Hv6_b4_trypdig.png")
+
+
+# Combine all 20 plots into a single object
+combined_plot <- Try_Dig_b1 + Try_Dig_b2 + Try_Dig_b3 + Try_Dig_b4
+# Save the combined plot as a single image
+ggsave("../../../R_export/Hv6/trypdig/combo_tryp_dig_Hv6.png", 
+       plot = combined_plot, width = 20, height = 16, scale=0.5)
+
+```
+
+
+#Calculate the total number of MS3 spectra acquired per batch
+
+```{r}
+
+# List of file paths and batch labels
+summary_files <- list(
+  "summary_b1" = "../../../R_import/Hv6/summary/summary_b1.txt",
+  "summary_b2" = "../../../R_import/Hv6/summary/summary_b2.txt",
+  "summary_b3" = "../../../R_import/Hv6/summary/summary_b3.txt",
+  "summary_b4" = "../../../R_import/Hv6/summary/summary_b4.txt"
+)
+
+# Function to read, clean, and plot a summary file
+plot_ms3_per_fraction <- function(filepath, batch_label) {
+  data <- read.table(filepath, header = TRUE, sep = "\t")
+  data_clean <- data %>%
+    filter(!is.na(Fraction)) %>%
+    mutate(Fraction = factor(Fraction, levels = 1:48))
+
+  ggplot(data_clean, aes(x = Fraction, y = MS3)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    theme_minimal() +
+    labs(
+      title = paste("MS3 scans (", batch_label, ")", sep = ""),
+      x = NULL,  # Removed x-axis label
+      y = "MS3 Identifications"
+    ) +
+    theme(
+      axis.text.x = element_text(angle = 90, vjust = 0.5, size = 6),  # Smaller font
+      plot.title = element_text(size = 12, hjust = 0.5)
+    )
+}
+
+# Generate all plots
+plots <- mapply(plot_ms3_per_fraction, summary_files, names(summary_files), SIMPLIFY = FALSE)
+
+# Combine using patchwork in a 2x2 layout
+combined_plot <- (plots[[1]] | plots[[2]]) / (plots[[3]] | plots[[4]])
+
+# Show combined plot
+print(combined_plot)
+
+# Save combined plot
+ggsave("../../../R_export/Hv6/ms3_scans/ms3_ID_Hv6.png",
+       combined_plot, width = 14, height = 10, dpi = 300, scale = 0.5)
+
+
+```
+
+#Calculate the sequence coverage 
+
+```{r}
+# --- Define input paths and output ---
+pgroup_files <- list(
+  "Batch 1" = "../../../R_import/Hv6/pGroups/pGroups_Hv6_b1_FDR.txt",
+  "Batch 2" = "../../../R_import/Hv6/pGroups/pGroups_Hv6_b2_FDR.txt",
+  "Batch 3" = "../../../R_import/Hv6/pGroups/pGroups_Hv6_b3_FDR.txt",
+  "Batch 4" = "../../../R_import/Hv6/pGroups/pGroups_Hv6_b4_FDR.txt"
+)
+
+output_dir <- "../../../R_export/Hv6/sequence_cov/"
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+# --- Read files into list ---
+pGroups_list <- lapply(pgroup_files, function(path) {
+  read.table(path, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+})
+names(pGroups_list) <- names(pgroup_files)
+
+# --- Generate one plot per batch ---
+seqcov_plots <- list()
+
+for (batch_name in names(pGroups_list)) {
+  df <- pGroups_list[[batch_name]]
+  coverage <- df[[21]]  # column 21: sequence coverage
+
+  p <- ggplot(data.frame(Coverage = coverage), aes(x = "", y = Coverage)) +
+    geom_violin(trim = FALSE, fill = "lightblue", color = "black") +
+    geom_boxplot(width = 0.1, fill = "white", color = "black", outlier.size = 0.5) +
+    labs(
+      title = paste0("seqcov_", tolower(gsub(" ", "", batch_name))),
+      x = NULL,
+      y = "Sequence Coverage"
+    ) +
+    theme_classic() +
+    theme(
+      plot.title = element_text(size = 12, face = "plain", hjust = 0.5),
+      axis.title = element_text(size = 10),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank()
+    )
+  
+  seqcov_plots[[length(seqcov_plots) + 1]] <- p
+}
+
+# --- Combine plots with patchwork ---
+combined_seqcov <- (seqcov_plots[[1]] | seqcov_plots[[2]]) /
+                   (seqcov_plots[[3]] | seqcov_plots[[4]])
+
+# --- Save combined figure ---
+ggsave(
+  filename = file.path(output_dir, "combined_seqcov_Hv6.png"),
+  plot = combined_seqcov,
+  width = 12,
+  height = 10,
+  dpi = 300, 
+  scale=0.6
+)
+
+message("Saved combined sequence coverage plot.")
+
+
+```
+
+#Check data distribution and structure 
+Here using ibaq protein groups after conversion with ibaq pipeline 
+```{r}
+
+# --- Load files ---
+data_dir <- "../../../R_import/Hv6/pG_ibaq/"
+file_list <- list.files(path = data_dir, pattern = "^pG_.*\\.csv$", full.names = TRUE)
+
+for (file in file_list) {
+  var_name <- gsub("^.*/pG_(.*)\\.csv$", "pG_\\1", file)
+  assign(var_name, data.table::fread(file), envir = .GlobalEnv)
+}
+
+# --- Remove Contaminants, Reverse, or OIBS ---
+for (var_name in ls(pattern = "^pG_")) {
+  if (grepl("final", var_name, ignore.case = TRUE)) next
+  df <- get(var_name)
+  if (all(c("Reverse", "Potential.contaminant", "Only.identified.by.site") %in% colnames(df))) {
+    df <- df[Reverse != "+" & Potential.contaminant != "+" & Only.identified.by.site != "+", ]
+  } else if ("Reverse" %in% colnames(df)) {
+    df <- df[Reverse != "+", ]
+  }
+  assign(var_name, df, envir = .GlobalEnv)
+}
+
+# --- Log2 Transformation of iBAQ Columns ---
+for (var_name in ls(pattern = "^pG_")) {
+  if (grepl("final", var_name, ignore.case = TRUE)) next
+  df <- get(var_name)
+  ibaq_cols <- grep("iBAQ", colnames(df), value = TRUE)
+  df[, (ibaq_cols) := lapply(.SD, function(x) {
+    x <- as.numeric(as.character(x))
+    x[is.na(x)] <- 0
+    log2(x + 1)
+  }), .SDcols = ibaq_cols]
+  assign(var_name, df, envir = .GlobalEnv)
+}
+
+# --- Median Centering of iBAQ Columns ---
+for (var_name in ls(pattern = "^pG_")) {
+  if (grepl("final", var_name, ignore.case = TRUE)) next
+  df <- get(var_name)
+  ibaq_cols <- grep("iBAQ", colnames(df), value = TRUE)
+  df[, (ibaq_cols) := lapply(.SD, function(x) x - median(x, na.rm = TRUE)), .SDcols = ibaq_cols]
+  assign(var_name, df, envir = .GlobalEnv)
+}
+
+# --- Output directories ---
+plot_dir <- "../../../R_export/Hv6/data_distribution/"
+heatmap_dir <- "../../../R_export/Hv6/heatmaps/"
+dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(heatmap_dir, showWarnings = FALSE, recursive = TRUE)
+
+# --- Plotting & Heatmap Generation ---
+histogram_plots <- list()
+heatmap_plots <- list()
+
+for (var_name in ls(pattern = "^pG_")) {
+  if (grepl("final", var_name, ignore.case = TRUE)) next
+  df <- get(var_name)
+
+  if (nrow(df) == 0) {
+    message("Skipping ", var_name, " - dataset is empty.")
+    next
+  }
+
+  ## iBAQ histogram plots
+  ibaq_cols_hist <- grep("_summed_iBAQ$", colnames(df), value = TRUE)
+  if (length(ibaq_cols_hist) > 0) {
+    plots <- lapply(seq_along(ibaq_cols_hist), function(i) {
+      ggplot(df, aes_string(x = ibaq_cols_hist[i])) +
+        geom_histogram(binwidth = 0.7, fill = "#105CB6", color = "black") +
+        labs(title = paste("Batch", i), x = "Reporter Intensity (iBAQ)", y = "Frequency") +
+        theme_classic() +
+        xlim(-25, 15) +
+        theme(
+          plot.title = element_text(size = 12, hjust = 0.5),
+          axis.title = element_text(size = 10),
+          axis.text = element_text(size = 10)
+        )
+    })
+
+    if (length(plots) > 0) {
+      title <- grid::textGrob(var_name, gp = grid::gpar(fontsize = 16, fontface = "bold"))
+      plot_grid <- gridExtra::arrangeGrob(grobs = plots, ncol = 3, top = title)
+
+      ggplot2::ggsave(
+        filename = file.path(plot_dir, paste0(var_name, "_iBAQ_distribution.png")),
+        plot = plot_grid,
+        width = 12,
+        height = 9, 
+        scale=0.9
+      )
+
+      # For patchwork: use first plot + title
+      first_plot <- plots[[1]] + ggtitle(paste0("histogram_", sub(".*b(\\d+).*", "b\\1", var_name)))
+      histogram_plots[[length(histogram_plots) + 1]] <- first_plot
+      message("Saved distribution plot for ", var_name)
+    }
+  }
+
+  ## Heatmap generation
+  ibaq_cols_heatmap <- grep("_iBAQ$", colnames(df), value = TRUE)
+  if (length(ibaq_cols_heatmap) == 11) {
+    mat_raw <- as.matrix(df[, ..ibaq_cols_heatmap])
+    rownames(mat_raw) <- df$Protein.IDs_pG
+    mat_raw[is.na(mat_raw)] <- -23
+    mat_scaled <- t(scale(t(mat_raw)))
+    mat_scaled <- mat_scaled[apply(mat_scaled, 1, function(x) all(!is.na(x))), ]
+
+    # Save static PNG
+    heatmap_file <- file.path(heatmap_dir, paste0(var_name, "_heatmap_scaled.png"))
+    pheatmap::pheatmap(mat_scaled,
+      filename = heatmap_file,
+      cluster_rows = TRUE,
+      cluster_cols = FALSE,
+      show_rownames = FALSE,
+      labels_col = paste0("channel", 1:11)
+    )
+    message("Saved heatmap for ", var_name)
+
+    # For patchwork (render in R, not saving image)
+    heatmap_plot <- pheatmap::pheatmap(
+      mat_scaled,
+      silent = TRUE,
+      cluster_rows = TRUE,
+      cluster_cols = FALSE,
+      show_rownames = FALSE,
+      labels_col = paste0("channel", 1:11),
+      main = paste0("heatmap_", sub(".*b(\\d+).*", "b\\1", var_name))
+    )
+    heatmap_plots[[length(heatmap_plots) + 1]] <- grid::grid.grabExpr(grid::grid.draw(heatmap_plot$gtable))
+  } else {
+    message("Skipping heatmap for ", var_name, " - found ", length(ibaq_cols_heatmap), " _iBAQ columns")
+  }
+}
+
+# --- Combine and save 2x2 grid of histograms ---
+if (length(histogram_plots) >= 4) {
+  combined_hist <- (histogram_plots[[1]] | histogram_plots[[2]]) /
+                   (histogram_plots[[3]] | histogram_plots[[4]])
+
+  ggplot2::ggsave(
+    filename = file.path(plot_dir, "combined_histograms.png"),
+    plot = combined_hist,
+    width = 16,
+    height = 14, 
+    scale=0.9
+  )
+  message("Saved combined histogram figure.")
+}
+
+# --- Combine and save 2x2 grid of heatmaps ---
+if (length(heatmap_plots) >= 4) {
+  combined_heat <- (wrap_elements(heatmap_plots[[1]]) | wrap_elements(heatmap_plots[[2]])) /
+                   (wrap_elements(heatmap_plots[[3]]) | wrap_elements(heatmap_plots[[4]]))
+
+  ggplot2::ggsave(
+    filename = file.path(heatmap_dir, "combined_heatmaps.png"),
+    plot = combined_heat,
+    width = 16,
+    height = 12, 
+    scale=0.6
+  )
+  message("Saved combined heatmap figure.")
+}
+
+```
+
+##Normalisation 
+- In this script we take our protein groups with ibaq values and we filter, transform and normaliye them so that thez are readz to be used for quantiative comparisons  
+
+
+```{r}
+## =============================================================
+## Hv6 NORMALIZATION PIPELINE — Hv4 LOGIC
+## Approach 2: Protect corrected/imputed cells from TSN + inter-batch scaling
+## =============================================================
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(ggplot2)
+  library(pheatmap)
+  library(ggplotify)
+  library(magick)
+})
+
+## --- Parameters ---
+min_val    <- 0.1
+heat_colors <- colorRampPalette(c("#4579F1", "white", "#D73020"))(100)
+
+## --- Hv6 batch-specific thresholds and correction rules ---
+batch_thresholds <- list(
+  "BAR" = 4.0,
+  "WHE" = 4.0,
+  "RYE" = 4.0,
+  "SOR" = 4.0
+)
+
+## No special rules (keeps behavior deterministic)
+batch_specific_rules <- list(
+  "BAR" = NULL,
+  "WHE" = NULL,
+  "RYE" = NULL,
+  "SOR" = NULL
+)
+
+## Store per-dataset modification masks (TRUE = imputed or corrected)
+mod_masks <- new.env(parent = emptyenv())
+
+
+## =========================
+## Moving-average smoothing (k = 3)
+## =========================
+smooth_transition <- function(x, k = 3) {
+  if (all(is.na(x))) return(x)
+  x_ext <- c(rep(x[1], floor(k/2)), x, rep(x[length(x)], floor(k/2)))
+  y <- stats::filter(x_ext, rep(1/k, k), sides = 2)
+  y <- y[(floor(k/2)+1):(length(y)-floor(k/2))]
+  as.numeric(y)
+}
+
+smooth_matrix <- function(mat, k = 3) {
+  t(apply(mat, 1, smooth_transition, k = k))
+}
+
+
+## =============================================================
+## 1️⃣ LOAD AND CLEAN
+## =============================================================
+
+## --- Load files ---
+data_dir  <- "../../../R_import/Hv6/pG_ibaq/"
+file_list <- list.files(path = data_dir, pattern = "^pG_.*\\.csv$", full.names = TRUE)
+
+for (file in file_list) {
+  var_name <- gsub("^.*/pG_(.*)\\.csv$", "pG_\\1", file)
+  assign(var_name, fread(file), envir = .GlobalEnv)
+}
+
+## --- Remove Reverse_pG / Potential.contaminant_pG ---
+for (var_name in ls(pattern = "^pG_")) {
+  if (grepl("final", var_name, TRUE)) next
+  df <- get(var_name)
+
+  for (col in c("Reverse_pG", "Potential.contaminant_pG")) {
+    if (col %in% names(df)) df[[col]] <- as.character(df[[col]])
+  }
+  if ("Reverse_pG" %in% names(df))               df <- df[is.na(Reverse_pG) | Reverse_pG != "+", ]
+  if ("Potential.contaminant_pG" %in% names(df)) df <- df[is.na(Potential.contaminant_pG) | Potential.contaminant_pG != "+", ]
+
+  assign(var_name, df, .GlobalEnv)
+}
+
+## --- Keep columns 1 and 72:80 (1 ID + 9 intensity channels) ---
+for (var_name in ls(pattern = "^pG_")) {
+  if (grepl("final", var_name, TRUE)) next
+  df <- get(var_name)
+  if (ncol(df) >= 80) {
+    ## Note: original selects 1 and 72:80 (inclusive)
+    df <- df[, c(1, 72:80), with = FALSE]
+  } else {
+    warning("Skipping ", var_name, " - not enough columns")
+  }
+  assign(var_name, df, .GlobalEnv)
+}
+
+## =============================================================
+## 2️⃣ ADAPTIVE IMPUTATION & OUTLIER CORRECTION (Hv4 logic, per batch)
+##     + build modification mask (TRUE where value was imputed or corrected)
+## =============================================================
+cat("\n--- Adaptive imputation & outlier correction (Hv4 logic, batch-specific) ---\n")
+
+for (var_name in ls(pattern = "^pG_")) {
+  if (grepl("final", var_name, TRUE)) next
+  df <- get(var_name)
+
+  ## Expect 1 ID + 9 channels
+  if (ncol(df) < 10) next
+  intensity_cols <- names(df)[2:10]
+  df[, (intensity_cols) := lapply(.SD, as.numeric), .SDcols = intensity_cols]
+
+  ## init mask: nrow x 9 channels
+  mask <- matrix(FALSE, nrow = nrow(df), ncol = length(intensity_cols))
+
+  ## Identify batch (e.g., BAR, WHE, RYE, SOR)
+  batch_name <- toupper(gsub("^pG_([A-Za-z]+).*", "\\1", var_name))
+  thr <- if (batch_name %in% names(batch_thresholds)) batch_thresholds[[batch_name]] else 2
+  rules <- batch_specific_rules[[batch_name]]
+
+  n_imp <- 0L
+  n_corr <- 0L
+
+  for (i in seq_len(nrow(df))) {
+    row_vals <- unlist(df[i, ..intensity_cols])
+
+    ## --- Apply batch-specific correction rules first ---
+    if (!is.null(rules)) {
+      for (rule in rules) {
+        target   <- rule$target
+        neigh_idx <- rule$neighbors
+        if (all(neigh_idx %in% seq_along(row_vals))) {
+          val <- row_vals[target]
+          neigh_vals <- row_vals[neigh_idx]
+          neigh_vals <- neigh_vals[is.finite(neigh_vals) & neigh_vals > 0]
+          if (length(neigh_vals)) {
+            neigh_mean <- mean(neigh_vals, na.rm = TRUE)
+            if (is.na(val) || val < min_val) {
+              row_vals[target] <- neigh_mean
+              n_imp <- n_imp + 1L
+              mask[i, target] <- TRUE
+            } else {
+              log2fc <- log2((val + 1) / (neigh_mean + 1))
+              if (abs(log2fc) > thr) {
+                row_vals[target] <- neigh_mean
+                n_corr <- n_corr + 1L
+                mask[i, target] <- TRUE
+              }
+            }
+          }
+        }
+      }
+    }
+
+    ## --- Default adaptive correction for all channels ---
+    rule_targets <- if (!is.null(rules)) vapply(rules, function(x) x$target, numeric(1)) else integer(0)
+    for (j in seq_along(row_vals)) {
+      if (length(rule_targets) && j %in% rule_targets) next
+      val <- row_vals[j]
+      neigh_idx <- c(j - 1L, j + 1L)
+      neigh_idx <- neigh_idx[neigh_idx >= 1L & neigh_idx <= length(row_vals)]
+      neigh_vals <- row_vals[neigh_idx]
+      neigh_vals <- neigh_vals[is.finite(neigh_vals) & neigh_vals > 0]
+      if (!length(neigh_vals)) next
+      neigh_mean <- mean(neigh_vals, na.rm = TRUE)
+      if (is.na(val) || val < min_val) {
+        row_vals[j] <- neigh_mean
+        n_imp <- n_imp + 1L
+        mask[i, j] <- TRUE
+      } else {
+        log2fc <- log2((val + 1) / (neigh_mean + 1))
+        if (abs(log2fc) > thr) {
+          row_vals[j] <- neigh_mean
+          n_corr <- n_corr + 1L
+          mask[i, j] <- TRUE
+        }
+      }
+    }
+
+    df[i, (intensity_cols) := as.list(row_vals)]
+  }
+
+  cat(sprintf("✅ %s — threshold=%.1f | corrected: %d (imputed=%d, outliers=%d)\n",
+              var_name, thr, n_imp + n_corr, n_imp, n_corr))
+
+  assign(var_name, df, .GlobalEnv)
+  mod_masks[[var_name]] <- mask
+}
+
+## =============================================================
+## 3️⃣ QC FUNCTIONS
+## =============================================================
+make_qc_plot <- function(df, title) {
+  intensity_cols <- names(df)[2:10]
+  sums    <- colSums(df[, ..intensity_cols], na.rm = TRUE)
+  medians <- vapply(intensity_cols, function(cn) median(df[[cn]], na.rm = TRUE), numeric(1))
+
+  stats_df <- data.table(Channel = factor(seq_along(intensity_cols)),
+                         Total_Intensity = sums, Median_Intensity = medians)
+  max_total <- max(stats_df$Total_Intensity, na.rm = TRUE)
+  max_med   <- max(stats_df$Median_Intensity,  na.rm = TRUE)
+  scale_factor <- if (is.finite(max_total / max_med) && max_med > 0) max_total / max_med else 1
+
+  ggplot(stats_df, aes(x = Channel)) +
+    geom_bar(aes(y = Total_Intensity), stat = "identity", fill = "steelblue", alpha = 0.6) +
+    geom_point(aes(y = Median_Intensity * scale_factor), color = "red", size = 2.5) +
+    geom_line(aes(y = Median_Intensity * scale_factor, group = 1), color = "red") +
+    scale_y_continuous(name = "Total Intensity",
+                       sec.axis = sec_axis(~ . / scale_factor, name = "Median Intensity")) +
+    labs(title = title, x = "Channel") +
+    theme_classic()
+}
+
+make_heatmap <- function(df, title, outfile = NA) {
+  intensity_cols <- names(df)[2:10]
+  mat <- as.matrix(df[, ..intensity_cols])
+  mode(mat) <- "numeric"
+  mat[!is.finite(mat)] <- NA
+  mat_log <- log10(mat + 1)
+  row_sd <- apply(mat_log, 1, sd, na.rm = TRUE)
+  mat_log <- mat_log[is.finite(row_sd) & row_sd > 0, , drop = FALSE]
+  colnames(mat_log) <- paste0("Ch", seq_len(ncol(mat_log)))
+  pheatmap(mat_log, filename = outfile, main = title, scale = "row", border_color = NA,
+           cluster_cols = FALSE, color = heat_colors, clustering_method = "average", silent = TRUE)
+}
+
+## =============================================================
+## 4️⃣ NORMALIZATION, PLOTTING, EXPORT
+## =============================================================
+
+## --- Paths ---
+out_dir_pre      <- "../../../R_export/Hv6/TS_mi"              ## Pre-normalization plots
+out_dir_post_out <- "../../../R_export/Hv6/TS_mi_norm_inter"   ## Post inter-batch plots
+out_dir_combo    <- "../../../R_export/Hv6/TS_mi_combined"     ## Collages of post-inter plots
+final_out_dir    <- "../../../R_Data/Hv6/pG_iBAQ_postnorm"     ## Final normalized data
+
+for (d in c(out_dir_pre, out_dir_post_out, out_dir_combo, final_out_dir)) {
+  if (!dir.exists(d)) dir.create(d, recursive = TRUE)
+}
+
+## --- Pre-norm QC plots ---
+cat("\n--- Pre-normalization summaries (bars + heatmaps) ---\n")
+for (nm in ls(pattern = "^pG_")) {
+  if (grepl("final", nm, TRUE)) next
+  df <- get(nm)
+  if (ncol(df) < 10) next
+  ggsave(file.path(out_dir_pre, paste0(nm, "_preNorm_sumMedian.png")),
+         make_qc_plot(df, paste("Total & Median Intensity —", nm, "(pre-norm)")),
+         width = 10, height = 5, dpi = 150)
+  make_heatmap(df, paste("Heatmap —", nm, "(pre-norm, log10, row-scaled)"),
+               file.path(out_dir_pre, paste0(nm, "_preNorm_heatmap.png")))
+}
+
+## --- Intra-batch total-sum normalization (TSN) ---
+## Compute factors from UNMODIFIED cells and apply scaling ONLY to UNMODIFIED cells
+cat("\n--- Intra-batch total-sum normalization (protecting modified cells) ---\n")
+for (nm in ls(pattern = "^pG_")) {
+  if (grepl("final", nm, TRUE)) next
+  df <- get(nm)
+  if (ncol(df) < 10) next
+  intensity_cols <- names(df)[2:10]
+  mask <- mod_masks[[nm]]
+  if (is.null(mask)) mask <- matrix(FALSE, nrow = nrow(df), ncol = length(intensity_cols))
+
+  ## Column sums from UNMODIFIED cells only
+  col_sums <- sapply(seq_along(intensity_cols), function(j) {
+    v <- df[[intensity_cols[j]]]
+    idx <- !mask[, j] & is.finite(v)
+    sum(v[idx], na.rm = TRUE)
+  })
+  target  <- median(col_sums[is.finite(col_sums)], na.rm = TRUE)
+  factors <- target / col_sums
+
+  ## Apply scaling ONLY to UNMODIFIED cells
+  for (j in seq_along(intensity_cols)) {
+    col <- intensity_cols[j]
+    v <- df[[col]]
+    idx <- !mask[, j] & is.finite(v)
+    v[idx] <- v[idx] * factors[j]
+    df[[col]] <- v
+  }
+  
+  ## ----------------------------------------
+  ## Moving-average smoothing (k = 3)
+  ## ----------------------------------------
+  mat_postTSN <- as.matrix(df[, ..intensity_cols])
+  mat_smooth  <- smooth_matrix(mat_postTSN, k = 3)
+
+  df[, (intensity_cols) := as.data.table(mat_smooth)]
+
+  cat(sprintf("✨ %s — Moving-average smoothing applied (k=3)\n", nm))
+
+  
+  assign(nm, df, .GlobalEnv)
+}
+
+## --- Inter-batch median centering (protect modified cells) ---
+cat("\n--- Inter-batch median centering (protecting modified cells) ---\n")
+batch_names <- Filter(function(x) !grepl("final", x, TRUE), ls(pattern = "^pG_"))
+
+## Per-batch medians from UNMODIFIED cells only
+batch_meds <- sapply(batch_names, function(nm) {
+  df <- get(nm)
+  if (ncol(df) < 10) return(NA_real_)
+  intensity_cols <- names(df)[2:10]
+  mask <- mod_masks[[nm]]
+  if (is.null(mask)) mask <- matrix(FALSE, nrow = nrow(df), ncol = length(intensity_cols))
+  vals <- c()
+  for (j in seq_along(intensity_cols)) {
+    v <- df[[intensity_cols[j]]]
+    idx <- !mask[, j] & is.finite(v)
+    if (any(idx)) vals <- c(vals, v[idx])
+  }
+  median(vals, na.rm = TRUE)
+})
+
+grand_median <- median(batch_meds, na.rm = TRUE)
+
+for (nm in batch_names) {
+  df <- get(nm)
+  if (ncol(df) < 10) next
+  intensity_cols <- names(df)[2:10]
+  mask <- mod_masks[[nm]]
+  if (is.null(mask)) mask <- matrix(FALSE, nrow = nrow(df), ncol = length(intensity_cols))
+
+  factor <- grand_median / batch_meds[nm]
+
+  ## Apply inter-batch scaling ONLY to UNMODIFIED cells
+  for (j in seq_along(intensity_cols)) {
+    col <- intensity_cols[j]
+    v <- df[[col]]
+    idx <- !mask[, j] & is.finite(v)
+    v[idx] <- v[idx] * factor
+    df[[col]] <- v
+  }
+
+  assign(nm, df, .GlobalEnv)
+}
+
+## --- Post inter-batch plots ---
+cat("\n--- Post inter-batch normalization plots ---\n")
+for (nm in batch_names) {
+  df <- get(nm)
+  if (ncol(df) < 10) next
+  ggsave(file.path(out_dir_post_out, paste0(nm, "_postInter_sumMedian.png")),
+         make_qc_plot(df, paste("Total & Median Intensity —", nm, "(post inter-batch)")),
+         width = 10, height = 5, dpi = 150)
+  make_heatmap(df, paste("Heatmap —", nm, "(post inter-batch, log10, row-scaled)"),
+               file.path(out_dir_post_out, paste0(nm, "_postInter_heatmap.png")))
+}
+
+## --- Combine all post-inter plots ---
+cat("\n--- Combining all post-inter plots (magick) ---\n")
+bar_files <- list.files(out_dir_post_out, pattern = "sumMedian\\.png$", full.names = TRUE)
+hm_files  <- list.files(out_dir_post_out, pattern = "heatmap\\.png$",   full.names = TRUE)
+
+if (length(bar_files) > 0) {
+  imgs <- lapply(bar_files, function(f) image_resize(image_read(f), "1600x1600"))
+  collage <- image_montage(image_join(imgs), tile = "2x2", geometry = "+10+10")
+  image_write(collage, file.path(out_dir_combo, "AllBatches_postInter_BarplotCollage.png"), format = "png")
+}
+if (length(hm_files) > 0) {
+  imgs <- lapply(hm_files, function(f) image_resize(image_read(f), "1600x1600"))
+  collage <- image_montage(image_join(imgs), tile = "2x2", geometry = "+10+10")
+  image_write(collage, file.path(out_dir_combo, "AllBatches_postInter_HeatmapCollage.png"), format = "png")
+}
+
+## --- Log2 transformation + export ---
+for (nm in batch_names) {
+  df <- get(nm)
+  if (ncol(df) < 10) next
+  intensity_cols <- names(df)[2:10]
+  df[, (intensity_cols) := lapply(.SD, function(x) log2(as.numeric(x) + 1)), .SDcols = intensity_cols]
+  fwrite(df, file.path(final_out_dir, paste0(nm, "_norm_log2.csv")))
+}
+
+cat("\n✅ Hv6 normalization pipeline (Approach 2) completed successfully.\n")
+
+
+```
+
+#In this chunk we map intensity values to the (hierarchical) orthogroups  
+
+```{r}
+
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(data.table)  # for fread
+library(tibble)      # for as_tibble
+
+### Annotate the pG normalized ----
+### Load Orthogroups and expand them with unassigned proteins
+library(tidyverse)
+
+# Load original (OrthoFinder) orthogroup table
+OrthoG_full_iso <- read_tsv("Z:/PhD Munchen/Guido personal PhD Project_1/Barley germination proteome/Resources for Data analysis/R/R_import/Hv6/orthos/N0_Hv6.tsv")
+
+# Load Unassigned Proteins
+Unassigned_proteins <- read_tsv("../../../R_import/Hv6/orthos/UnassignedGenes_Hv6.tsv")
+
+
+# Harmonize column names BEFORE combining
+# 1. Ensure unassigned table has OG column
+if ("Orthogroup" %in% names(Unassigned_proteins)) {
+    Unassigned_proteins <- Unassigned_proteins %>% rename(OG = Orthogroup)
+}
+# 2. Ensure unassigned table has HOG column — create synthetic if missing
+if (!"HOG" %in% names(Unassigned_proteins)) {
+    Unassigned_proteins <- Unassigned_proteins %>%
+        mutate(HOG = paste0("UNASSIGNED_", row_number()))
+}
+# 3. Standardize species column names
+rename_species_cols <- function(df) {
+    df %>% rename(
+        barley   = matches("Barke|barley", ignore.case = TRUE),
+        rye      = matches("SECALE|rye", ignore.case = TRUE),
+        sorghum  = matches("Sbicolor|sorghum", ignore.case = TRUE),
+        wheat    = matches("wheat", ignore.case = TRUE),
+        clade    = matches("Gene Tree Parent Clade|clade", ignore.case = TRUE)
+    )
+}
+OrthoG_full_iso    <- rename_species_cols(OrthoG_full_iso)
+Unassigned_proteins <- rename_species_cols(Unassigned_proteins)
+
+# Combine both tables
+OrthoG_exp <- bind_rows(OrthoG_full_iso, Unassigned_proteins)
+
+# Finally enforce correct column order
+OrthoG_exp <- OrthoG_exp %>%
+  select(HOG, barley, rye, sorghum, wheat)
+
+OrthoG_long <- OrthoG_exp %>%
+  pivot_longer(cols = c(barley, rye, sorghum, wheat),
+               names_to = "Species", values_to = "Proteins") %>%
+  separate_rows(Proteins, sep = ",") %>%
+  mutate(Proteins = str_trim(Proteins))
+
+
+### --- Attach normalised intensity values ----
+
+# Load post-normalised Hv6 files (9 channels exported: cols 2:10)
+data_dir <- "../../../R_Data/Hv6/pG_iBAQ_postnorm"
+file_list <- list.files(path = data_dir, pattern = "_norm_log2\\.csv$", full.names = TRUE)
+
+# Read as tibbles for dplyr
+mat_list <- lapply(file_list, function(p) as_tibble(fread(p)))
+names(mat_list) <- gsub("^.*/(.*)\\.csv$", "\\1", file_list)
+
+prot_col <- "Protein.IDs_pG"
+# Use column NAMES for the 9 channels (2:10)
+get_ibaq_names <- function(df) names(df)[2:10]
+
+# Helper to attach intensities for one species
+attach_species <- function(species_name, proteome_df) {
+  ibaq_names <- get_ibaq_names(proteome_df)
+  OrthoG_sub <- OrthoG_long %>% filter(Species == species_name)
+
+  merged <- proteome_df %>%
+    right_join(OrthoG_sub, by = setNames("Proteins", prot_col))  # Protein.IDs_pG ↔︎ Proteins
+
+  out <- merged %>%
+    filter(if_any(all_of(ibaq_names), ~ !is.na(.))) %>%
+    group_by(HOG) %>%
+    summarise(
+      Proteins = paste(unique(.data[[prot_col]]), collapse = ","),
+      across(all_of(ibaq_names), ~ mean(.x, na.rm = TRUE), .names = "{.col}")
+    ) %>%
+    ungroup()
+
+  # Rename intensity columns to iBAQ_norm_ch1..ch9_species
+  old <- ibaq_names
+  new <- paste0("iBAQ_norm_ch", seq_along(old), "_", species_name)
+  names(out)[match(old, names(out))] <- new
+  names(out)[names(out) == "Proteins"] <- paste0("Proteins_", species_name)
+  out
+}
+
+# Map file names to species (adjust if your file names differ)
+barley_df  <- attach_species("barley",   mat_list[["pG_BAR_b1_norm_log2"]])
+rye_df     <- attach_species("rye",      mat_list[["pG_RYE_b3_norm_log2"]])
+sorghum_df <- attach_species("sorghum",  mat_list[["pG_SOR_b4_norm_log2"]])
+wheat_df   <- attach_species("wheat",    mat_list[["pG_WHE_b2_norm_log2"]])
+
+# Merge all into one orthogroup table
+ortog_int <- barley_df %>%
+  full_join(rye_df,     by = "HOG") %>%
+  full_join(sorghum_df, by = "HOG") %>%
+  full_join(wheat_df,   by = "HOG")
+
+# Preview & save
+print(head(ortog_int, 10))
+
+out_dir <- "../../../R_Data/Hv6/ortog_anno"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+out_file <- file.path(out_dir, "ortog_int.csv")
+data.table::fwrite(ortog_int, out_file)
+
+
+### --- Attach normalised intensity values (NO MEAN, NO MERGING) ----
+### --- This is a second version to make heatmaps later on 
+
+library(data.table)
+library(dplyr)
+library(tibble)
+
+# --------------------------------------------------
+# Load post-normalised Hv6 files
+# --------------------------------------------------
+data_dir <- "../../../R_Data/Hv6/pG_iBAQ_postnorm"
+file_list <- list.files(path = data_dir, pattern = "_norm_log2\\.csv$", full.names = TRUE)
+
+mat_list <- lapply(file_list, function(p) as_tibble(fread(p)))
+names(mat_list) <- gsub("^.*/(.*)\\.csv$", "\\1", file_list)
+
+prot_col <- "Protein.IDs_pG"
+
+# Extract intensity column names (channels 2:10)
+get_ibaq_names <- function(df) names(df)[2:10]
+
+# --------------------------------------------------
+# Helper: attach intensities WITHOUT collapsing
+# --------------------------------------------------
+attach_species_long <- function(species_name, proteome_df) {
+
+  ibaq_names <- get_ibaq_names(proteome_df)
+
+  # Filter orthogroup table for species
+  OrthoG_sub <- OrthoG_long %>% filter(Species == species_name)
+
+  # Join protein intensities
+  merged <- proteome_df %>%
+    inner_join(
+      OrthoG_sub,
+      by = setNames("Proteins", prot_col)  # Protein.IDs_pG ↔ Proteins
+    )
+
+  # Keep rows with at least one intensity
+  merged <- merged %>%
+    filter(if_any(all_of(ibaq_names), ~ !is.na(.)))
+
+  # Rename intensity columns to species-aware format
+  new_names <- paste0("iBAQ_norm_ch", seq_along(ibaq_names), "_", species_name)
+  names(merged)[match(ibaq_names, names(merged))] <- new_names
+
+  # Clean output structure
+  merged %>%
+    transmute(
+      HOG = HOG,
+      Species = species_name,
+      Protein_ID = .data[[prot_col]],
+      across(starts_with("iBAQ_norm_ch"))
+    )
+}
+
+# --------------------------------------------------
+# Attach intensities PER SPECIES (no collapsing)
+# --------------------------------------------------
+barley_long  <- attach_species_long("barley",   mat_list[["pG_BAR_b1_norm_log2"]])
+rye_long     <- attach_species_long("rye",      mat_list[["pG_RYE_b3_norm_log2"]])
+sorghum_long <- attach_species_long("sorghum",  mat_list[["pG_SOR_b4_norm_log2"]])
+wheat_long   <- attach_species_long("wheat",    mat_list[["pG_WHE_b2_norm_log2"]])
+
+# --------------------------------------------------
+# Stack all species together (still long)
+# --------------------------------------------------
+ortog_long_int <- bind_rows(
+  barley_long,
+  rye_long,
+  sorghum_long,
+  wheat_long
+)
+
+# --------------------------------------------------
+# Preview
+# --------------------------------------------------
+print(head(ortog_long_int, 20))
+
+# --------------------------------------------------
+# Save output
+# --------------------------------------------------
+out_dir <- "../../../R_Data/Hv6/ortog_anno"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+out_file <- file.path(out_dir, "ortog_long_int_noMean.csv")
+data.table::fwrite(ortog_long_int, out_file)
+
+cat("✔ Saved long orthogroup protein-level matrix:\n", out_file, "\n")
+
+
+```
+
+##In this script we add functional annotations to our proteins
+
+```{r}
+                      
+#Load the DB matches between the species specific fasta and the uniprot species specific fasta, so that each fasta entry is associated with a uniprot entry 
+# set the folder path
+path <- "../../../R_import/Hv6/anno/DB_fasta_vs_up"
+
+# Load each file separately
+barley_hvup <- read.delim(file.path(path, "barke_upbarley.tsv"), sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+rye_scpg <- read.csv(file.path(path, "rye_0225_featuretab_Stein.csv"), header = TRUE, stringsAsFactors = FALSE)
+sorghum_sbup <- read.delim(file.path(path, "sorghum_upsorghum.tsv"), sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+wheat_taup <- read.delim(file.path(path, "wheat_upwheat.tsv"), sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+
+# Keep only first 2 columns and rename them consistently
+barley_hvup  <- barley_hvup[, 1:2]
+rye_scpg     <- rye_scpg[, c(1,5)]
+sorghum_sbup <- sorghum_sbup[, 1:2]
+wheat_taup   <- wheat_taup[, 1:2]
+
+colnames(barley_hvup)  <- c("barleyup_entry", "barley_entry")
+colnames(rye_scpg)     <- c("rye_entry",     "rye_proteinname")
+colnames(sorghum_sbup) <- c("sbup_entry", "sorghum_entry")
+colnames(wheat_taup)   <- c("taup_entry", "wheat_entry")
+
+# Clean annotation files to allow matching 
+barley_hvup$barleyup_entry <- sub("^[^|]*\\|[^|]*\\|", "", barley_hvup$barleyup_entry)
+sorghum_sbup$sbup_entry     <- sub("^[^|]*\\|[^|]*\\|", "", sorghum_sbup$sbup_entry)
+wheat_taup$taup_entry       <- sub("^[^|]*\\|[^|]*\\|", "", wheat_taup$taup_entry)
+
+#deduplicate entries 
+barley_hvup <- barley_hvup %>%
+  distinct(barley_entry, .keep_all = TRUE)
+sorghum_sbup <- sorghum_sbup %>%
+  distinct(sorghum_entry, .keep_all = TRUE)
+wheat_taup <- wheat_taup %>%
+  distinct(wheat_entry, .keep_all = TRUE)
+  
+##Attach functional annotation from uniprot to the uniprot matched entries 
+# set the folder path
+path <- "../../../R_import/Hv6/anno/masters_up"
+
+# Load each file separately
+up_Hv <- read.delim(file.path(path, "unip_Hv_1505.tsv"), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+up_Sb <- read.delim(file.path(path, "unip_Sb_270825.tsv"), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+up_Ta <- read.delim(file.path(path, "unip_Ta_1505.tsv"), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+up_At <- read.delim(file.path(path, "unip_At_1505.tsv"), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+
+# Keep only first 2 columns and rename them consistently
+up_Hv  <- up_Hv[, c(3,4,5,7,8,9)]
+colnames(up_Hv)  <- c("barleyup_entryname", "barleyup_pname", "barleyup_gname", "barleyup_GO_bp", "barleyup_GO_mf", "barleyup_GO_cc")
+
+up_Sb <- up_Sb[, c(2,3,4,5,7,6)]
+colnames(up_Sb)  <- c("sorghumup_entryname", "sorghumup_pname", "sorghumup_gname", "sorghumup_GO_bp", "sorghumup_GO_mf", "sorghumup_GO_cc")
+
+up_Ta   <- up_Ta[, c(3,4,5,7,8,9)]
+colnames(up_Ta)  <- c("wheatup_entryname", "wheatup_pname", "wheatup_gname", "wheatup_GO_bp", "wheatup_GO_mf", "wheatup_GO_cc")
+
+up_At     <- up_At[, c(2,3,4,5,7,6)]
+colnames(up_At)  <- c("arabidopsisup_entryname", "arabidopsisup_pname", "arabidopsisup_gname", "arabidopsisup_GO_bp", "arabidopsisup_GO_mf", "arabidopsisup_GO_cc")
+
+#Attach the functional annotation to the DB matches and then to the orthology file. I set all.x=TRUE, because i dont want to have annotations for proteins that are not matching 
+
+barley_anno <- merge(
+  barley_hvup,
+  up_Hv,
+  by.x = "barleyup_entry",
+  by.y = "barleyup_entryname",
+  all.x = TRUE
+)
+wheat_anno <- merge(
+  wheat_taup,
+  up_Ta,
+  by.x = "taup_entry",
+  by.y = "wheatup_entryname",
+  all.x = TRUE
+)
+sorghum_anno <- merge(
+  sorghum_sbup,
+  up_Sb,
+  by.x = "sbup_entry",
+  by.y = "sorghumup_entryname",
+  all.x = TRUE
+)
+
+#Now we want to add Arabidopsis thaliana annotations, especially to be able to run GO enrichment. So we expand the annotations with arabidopsis thaliana annotations and then we will merge everything to the orthology matrix
+##Load the matches generated with Diamond BLAST between all the 4 species specific fasta files and the uniprot Arabidopsis thaliana specific fasta file. This allows us to attach Arabidopsis thaliana GO terms, usefull to perform enrichment analysis
+# set the folder path
+path <- "../../../R_import/Hv6/anno/DB_fasta_vs_upAt"
+
+# Load each file separately
+barley_ATup <- read.delim(file.path(path, "araT_barke.tsv"), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+rye_ATup <- read.delim(file.path(path, "araT_rye.tsv"), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+sorghum_ATup <- read.delim(file.path(path, "araT_Sbicolor.tsv"), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+wheat_ATup <- read.delim(file.path(path, "araT_wheat.tsv"), sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+
+# Keep only first 2 columns and rename them consistently
+barley_ATup  <- barley_ATup[, 1:2]
+rye_ATup     <- rye_ATup[, 1:2]
+sorghum_ATup <- sorghum_ATup[, 1:2]
+wheat_ATup   <- wheat_ATup[, 1:2]
+
+colnames(barley_ATup)  <- c("barley_entry",  "araT_entry")
+colnames(rye_ATup)     <- c("rye_entry",     "araT_entry")
+colnames(sorghum_ATup) <- c("sorghum_entry", "araT_entry")
+colnames(wheat_ATup)   <- c("wheat_entry",   "araT_entry")
+
+# Clean annotation files to allow matching 
+barley_ATup$araT_entry <- sub("^[^|]*\\|[^|]*\\|", "", barley_ATup$araT_entry)
+rye_ATup$araT_entry     <- sub("^[^|]*\\|[^|]*\\|", "", rye_ATup$araT_entry)
+sorghum_ATup$araT_entry       <- sub("^[^|]*\\|[^|]*\\|", "", sorghum_ATup$araT_entry)
+wheat_ATup$araT_entry       <- sub("^[^|]*\\|[^|]*\\|", "", wheat_ATup$araT_entry)
+
+#deduplicate entries 
+barley_ATup <- barley_ATup %>%
+  distinct(barley_entry, .keep_all = TRUE)
+sorghum_ATup <- sorghum_ATup %>%
+  distinct(sorghum_entry, .keep_all = TRUE)
+wheat_ATup <- wheat_ATup %>%
+  distinct(wheat_entry, .keep_all = TRUE)
+rye_ATup <- rye_ATup %>%
+  distinct(rye_entry, .keep_all = TRUE)
+  
+#Merge each annotation file with arabidopsis thaliana entries 
+barley_anno_expat <- merge(
+  barley_anno,
+  barley_ATup,
+  by = "barley_entry",
+  all.x = TRUE
+)
+
+rye_anno_expat <- merge(
+  rye_scpg,
+  rye_ATup,
+  by = "rye_entry",
+  all.x = TRUE
+)
+
+sorghum_anno_expat <- merge(
+  sorghum_anno,
+  sorghum_ATup,
+  by = "sorghum_entry",
+  all.x = TRUE
+)
+
+wheat_anno_expat <- merge(
+  wheat_anno,
+  wheat_ATup,
+  by = "wheat_entry",
+  all.x = TRUE
+)
+
+#Attach functional annotation from Atuniprot
+At_UP_annotated <- read_tsv("../../../R_import/Hv6/anno/masters_up/unip_At_1505.tsv")
+At_UP_annotated  <- At_UP_annotated[, c(2,3,4,5,6,7,8)]
+At_UP_annotated <- At_UP_annotated %>%
+  mutate(TAIR = sub(";.*", "", TAIR))
+
+#Finally get the final annotation file 
+# Barley
+barley_full_anno <- merge(
+  barley_anno_expat,
+  At_UP_annotated,
+  by.x = "araT_entry",
+  by.y = "Entry Name",
+  all.x = TRUE
+)
+barley_full_anno <- barley_full_anno[, c(2, 3, 4, 5, 6, 7, 8, 1, 14, 9, 10, 11, 12, 13)]
+colnames(barley_full_anno) <- c("barley_entry","barleyup_entry","barleyup_pname","barleyup_gname",
+                                "barleyup_GO_bp","barleyup_GO_mf","barleyup_GO_cc","araT_entry_hv",
+                                "TAIR_hv","atup_pname_hv","atup_gname_hv","at_GO_bp_hv",
+                                "at_GO_mf_hv","at_GO_cc_hv")
+
+# Rye
+rye_full_anno <- merge(
+  rye_anno_expat,
+  At_UP_annotated,
+  by.x = "araT_entry",
+  by.y = "Entry Name",
+  all.x = TRUE
+)
+rye_full_anno <- rye_full_anno[, c(2, 3, 1, 9,4, 5, 6, 7, 8)]
+colnames(rye_full_anno) <- c("rye_entry","rye_pname","araT_entry_rye",
+                             "TAIR_rye","atup_pname_rye","atup_gname_rye","at_GO_bp_rye",
+                             "at_GO_mf_rye","at_GO_cc_rye")
+
+# Sorghum
+sorghum_full_anno <- merge(
+  sorghum_anno_expat,
+  At_UP_annotated,
+  by.x = "araT_entry",
+  by.y = "Entry Name",
+  all.x = TRUE
+)
+sorghum_full_anno <- sorghum_full_anno[, c(2, 3, 4, 5, 6, 7, 8, 1, 14, 9, 10, 11, 12, 13)]
+colnames(sorghum_full_anno) <- c("sorghum_entry","sorghumup_entry","sorghumup_pname","sorghumup_gname",
+                                 "sorghumup_GO_bp","sorghumup_GO_mf","sorghumup_GO_cc","araT_entry_sorghum",
+                                "TAIR_sorghum","atup_pname_sorghum","atup_gname_sorghum","at_GO_bp_sorghum",
+                                 "at_GO_mf_sorghum","at_GO_cc_sorghum")
+
+# Wheat
+wheat_full_anno <- merge(
+  wheat_anno_expat,
+  At_UP_annotated,
+  by.x = "araT_entry",
+  by.y = "Entry Name",
+  all.x = TRUE
+)
+wheat_full_anno <- wheat_full_anno[, c(2, 3, 4, 5, 6, 7, 8, 1, 14, 9, 10, 11, 12, 13)]
+colnames(wheat_full_anno) <- c("wheat_entry","wheatup_entry","wheatup_pname","wheatup_gname",
+                               "wheatup_GO_bp","wheatup_GO_mf","wheatup_GO_cc","araT_entry_wheat",
+                               "TAIR_wheat","atup_pname_wheat","atup_gname_wheat","at_GO_bp_wheat",
+                               "at_GO_mf_wheat","at_GO_cc_wheat")
+
+
+#Now the most extraordinary thing, matching all this to the orthologues matrix
+
+#Load orthogroups annotated with intensity values, that needs to be expanded with functional annotations
+ortog_int <- read.csv("../../../R_Data/Hv6/ortog_anno/ortog_int.csv",
+                      header = TRUE, stringsAsFactors = FALSE)
+# Create helper column with only the first protein ID
+ortog_int$Proteins_barley_main <- sub(",.*", "", ortog_int$Proteins_barley)
+ortog_int$Proteins_rye_main <- sub(",.*", "", ortog_int$Proteins_rye)
+ortog_int$Proteins_sorghum_main <- sub(",.*", "", ortog_int$Proteins_sorghum)
+ortog_int$Proteins_wheat_main <- sub(",.*", "", ortog_int$Proteins_wheat)
+
+# Merge using the helper column
+ortog_int_annoHv <- merge(
+  ortog_int,
+  barley_full_anno,
+  by.x = "Proteins_barley_main",
+  by.y = "barley_entry",
+  all.x = TRUE
+)
+ortog_int_annoHvTa <- merge(
+  ortog_int_annoHv,
+  wheat_full_anno,
+  by.x = "Proteins_wheat_main",
+  by.y = "wheat_entry",
+  all.x = TRUE
+)
+ortog_int_annoHvTaSb <- merge(
+  ortog_int_annoHvTa,
+  sorghum_full_anno,
+  by.x = "Proteins_sorghum_main",
+  by.y = "sorghum_entry",
+  all.x = TRUE
+)
+Hv6_final_matrix <- merge(
+  ortog_int_annoHvTaSb,
+  rye_full_anno,
+  by.x = "Proteins_rye_main",
+  by.y = "rye_entry",
+  all.x = TRUE
+)
+
+#Final adjustment in the order of the columns 
+Hv6_final_matrix <- Hv6_final_matrix[
+  , c(
+    "HOG",
+  
+    # Barley block
+    "Proteins_barley","Proteins_barley_main",
+    grep("^iBAQ_norm_ch[0-9]+_barley$", colnames(Hv6_final_matrix), value = TRUE),
+    "barleyup_entry","barleyup_pname","barleyup_gname",
+    "barleyup_GO_bp","barleyup_GO_mf","barleyup_GO_cc",
+    "araT_entry_hv","TAIR_hv","atup_pname_hv","atup_gname_hv",
+    "at_GO_bp_hv","at_GO_mf_hv","at_GO_cc_hv",
+    
+    # Wheat block
+    "Proteins_wheat","Proteins_wheat_main",
+    grep("^iBAQ_norm_ch[0-9]+_wheat$", colnames(Hv6_final_matrix), value = TRUE),
+    "wheatup_entry","wheatup_pname","wheatup_gname",
+    "wheatup_GO_bp","wheatup_GO_mf","wheatup_GO_cc",
+    "araT_entry_wheat","TAIR_wheat","atup_pname_wheat","atup_gname_wheat",
+    "at_GO_bp_wheat","at_GO_mf_wheat","at_GO_cc_wheat",
+    
+    # Rye block
+    "Proteins_rye","Proteins_rye_main",
+    grep("^iBAQ_norm_ch[0-9]+_rye$", colnames(Hv6_final_matrix), value = TRUE),
+    "rye_pname","araT_entry_rye","TAIR_rye","atup_pname_rye","atup_gname_rye",
+    "at_GO_bp_rye","at_GO_mf_rye","at_GO_cc_rye",
+    
+    # Sorghum block
+    "Proteins_sorghum","Proteins_sorghum_main",
+    grep("^iBAQ_norm_ch[0-9]+_sorghum$", colnames(Hv6_final_matrix), value = TRUE),
+    "sorghumup_entry","sorghumup_pname","sorghumup_gname",
+    "sorghumup_GO_bp","sorghumup_GO_mf","sorghumup_GO_cc",
+    "araT_entry_sorghum","TAIR_sorghum","atup_pname_sorghum","atup_gname_sorghum",
+    "at_GO_bp_sorghum","at_GO_mf_sorghum","at_GO_cc_sorghum"
+  )
+]
+
+# Save final matrix
+outdir <- "../../../R_Data/Hv6"
+if (!dir.exists(outdir)) {
+  dir.create(outdir, recursive = TRUE)
+}
+
+write.csv(
+  Hv6_final_matrix,
+  file = file.path(outdir, "Hv6_final_matrix.csv"),
+  row.names = FALSE
+)
+
+
+# ================================================================
+# Attach annotations to LONG orthogroup matrix (NO MEAN VERSION)
+# ================================================================
+
+library(dplyr)
+library(data.table)
+
+# Load long protein-level orthogroup matrix
+ortog_long <- read.csv(
+  "../../../R_Data/Hv6/ortog_anno/ortog_long_int_noMean.csv",
+  stringsAsFactors = FALSE
+)
+
+# --------------------------------------------------
+# Split by species for clean joins
+# --------------------------------------------------
+barley_long  <- ortog_long %>% filter(Species == "barley")
+rye_long     <- ortog_long %>% filter(Species == "rye")
+sorghum_long <- ortog_long %>% filter(Species == "sorghum")
+wheat_long   <- ortog_long %>% filter(Species == "wheat")
+
+# --------------------------------------------------
+# Attach annotations directly by protein ID
+# --------------------------------------------------
+
+# Barley
+barley_annot <- barley_long %>%
+  left_join(barley_full_anno, by = c("Protein_ID" = "barley_entry"))
+
+# Rye
+rye_annot <- rye_long %>%
+  left_join(rye_full_anno, by = c("Protein_ID" = "rye_entry"))
+
+# Sorghum
+sorghum_annot <- sorghum_long %>%
+  left_join(sorghum_full_anno, by = c("Protein_ID" = "sorghum_entry"))
+
+# Wheat
+wheat_annot <- wheat_long %>%
+  left_join(wheat_full_anno, by = c("Protein_ID" = "wheat_entry"))
+
+# --------------------------------------------------
+# Recombine everything
+# --------------------------------------------------
+Hv6_final_matrix_no_mean <- bind_rows(
+  barley_annot,
+  wheat_annot,
+  rye_annot,
+  sorghum_annot
+)
+
+# --------------------------------------------------
+# Optional: reorder columns (clean structure)
+# --------------------------------------------------
+Hv6_final_matrix_no_mean <- Hv6_final_matrix_no_mean %>%
+  relocate(HOG, Species, Protein_ID)
+
+# --------------------------------------------------
+# Save new matrix
+# --------------------------------------------------
+outdir <- "../../../R_Data/Hv6"
+if (!dir.exists(outdir)) dir.create(outdir, recursive = TRUE)
+
+write.csv(
+  Hv6_final_matrix_no_mean,
+  file = file.path(outdir, "Hv6_final_matrix_no_mean.csv"),
+  row.names = FALSE
+)
+
+cat("✔ Saved protein-resolved annotated matrix:\n",
+    file.path(outdir, "Hv6_final_matrix_no_mean.csv"), "\n")
+
+```
+
+###Visualize full dataset 
+in this chunk I visualize the full dataset and I also have a script to visualize specific protein families (helpful to quickly check one protein of interest)
+
+```{r}
+####See the entire dataset 
+library(pheatmap)
+library(ggplot2)
+
+# 1. Load data
+Hv6_final_matrix <- read.csv("../../../R_Data/Hv6/Hv6_final_matrix.csv",
+                             header = TRUE, stringsAsFactors = FALSE)
+
+# 2. Define timepoints (use unique labels)
+timepoints <- c("0hs","12hs","24hs","36hs",
+                "48hs","60hs","72hs","84hs","96hs")
+
+# 3. Function to rename iBAQ columns
+rename_ibaq <- function(df, species){
+  old <- grep(paste0("^iBAQ_norm_ch[0-9]+_", species), names(df), value = TRUE)
+  new <- paste0("iBAQ_norm_", timepoints, "_", species)
+  names(df)[match(old, names(df))] <- new
+  return(df)
+}
+
+Hv6_final_matrix <- rename_ibaq(Hv6_final_matrix, "barley")
+Hv6_final_matrix <- rename_ibaq(Hv6_final_matrix, "wheat")
+Hv6_final_matrix <- rename_ibaq(Hv6_final_matrix, "rye")
+Hv6_final_matrix <- rename_ibaq(Hv6_final_matrix, "sorghum")
+
+## Generate a heatmap of the full dataset
+# 1. Define species and timepoints for ordering
+species <- c("barley", "wheat", "rye", "sorghum")
+timepoints <- c("0hs","12hs","24hs","36hs",
+                "48hs","60hs","72hs","84hs","96hs")
+
+# 2. Build the column order explicitly
+iBAQ_cols <- unlist(lapply(species, function(sp) {
+  paste0("iBAQ_norm_", timepoints, "_", sp)
+}))
+iBAQ_cols <- iBAQ_cols[iBAQ_cols %in% names(Hv6_final_matrix)]
+
+# 3. Build matrix
+iBAQ_matrix <- as.matrix(Hv6_final_matrix[, iBAQ_cols])
+
+# 4. Replace NA with 1
+iBAQ_matrix[is.na(iBAQ_matrix)] <- 1
+
+# 5. Clean column names (remove "iBAQ_norm_")
+colnames(iBAQ_matrix) <- gsub("^iBAQ_norm_", "", colnames(iBAQ_matrix))
+
+# 6. Prepare output folder
+outdir <- "../../../R_export/Hv6/unbiased"
+if (!dir.exists(outdir)) {
+  dir.create(outdir, recursive = TRUE)
+}
+
+# 7. Save heatmap as JPEG
+jpeg(file.path(outdir, "Hv6_heatmap_unbiased.jpeg"), width = 12, height = 8, units = "in", res = 300)
+pheatmap(
+  iBAQ_matrix,
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,  # keep order barley → wheat → rye → sorghum
+  scale = "row",
+  color = colorRampPalette(c("blue", "white", "firebrick3"))(50),
+  legend_labels = "zscore_iBAQ"
+)
+dev.off()
+
+## --- PCA ANALYSIS ---
+
+# Transpose: samples as rows
+pca_res <- prcomp(t(iBAQ_matrix), scale. = TRUE)
+
+# Calculate explained variance
+var_expl <- pca_res$sdev^2 / sum(pca_res$sdev^2)
+pc1_var <- round(var_expl[1] * 100, 1)
+pc2_var <- round(var_expl[2] * 100, 1)
+
+# Build dataframe for plotting
+pca_df <- as.data.frame(pca_res$x[, 1:2])
+pca_df$Sample <- rownames(pca_df)
+pca_df$Species <- sub(".*_", "", pca_df$Sample)
+pca_df$Time <- sub("_.*", "", pca_df$Sample)
+
+# Plot PCA
+p_pca <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Species, label = Time)) +
+  geom_point(size = 4) +
+  geom_text(vjust = 1.5, size = 3) +
+  theme_classic() +
+  ggtitle("Proteomic similarity") +
+  theme(plot.title = element_text(hjust = 0.5)) +  # center title
+  xlab(paste0("PC1 (", pc1_var, "%)")) +
+  ylab(paste0("PC2 (", pc2_var, "%)"))
+
+# Save
+ggsave(file.path(outdir, "Hv6_PCA.jpeg"), p_pca, width = 7, height = 6, dpi = 300)
+
+
+```
+
+###Generate profile plots from candidate protein families 
+In this chunk we generate profile plots for candidate protein families. 
+```{r}
+## ============================================================
+## Hv6 — Malting enzyme heatmap (with Hv5 family definitions)
+## ============================================================
+
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(RColorBrewer)
+
+# ----------------------------
+# 1. Load dataset
+# ----------------------------
+
+Hv6_final_matrix <- read.csv(
+  "../../../R_Data/Hv6/Hv6_final_matrix.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE
+) %>%
+  filter(!grepl("^UNASSIGNED_", .[[1]]))
+
+
+# ----------------------------
+# 2. Rename iBAQ columns
+# ----------------------------
+timepoints <- c("0hs","12hs","24hs","36hs",
+                "48hs","60hs","72hs","84hs","96hs")
+
+rename_ibaq <- function(df, species){
+  old <- grep(paste0("^iBAQ_norm_ch[0-9]+_", species), names(df), value = TRUE)
+  new <- paste0("iBAQ_norm_", timepoints, "_", species)
+  names(df)[match(old, names(df))] <- new
+  return(df)
+}
+
+species <- c("barley", "wheat", "rye", "sorghum")
+for (sp in species) {
+  Hv6_final_matrix <- rename_ibaq(Hv6_final_matrix, sp)
+}
+
+# ----------------------------
+# 3. Use Hv5 enzyme family definitions
+# ----------------------------
+
+all_families_ID <- list(
+    `Alpha-amylase` = c(
+        "HORVU.BARKE.PROJ.6HG00559210.1",  # Amy1-1
+        "HORVU.BARKE.PROJ.6HG00559200.1",  # Amy1-1
+        "HORVU.BARKE.PROJ.6HG00559230.1",  # Amy1-1
+        "HORVU.BARKE.PROJ.6HG00559240.1",  # Amy1-1
+        "HORVU.BARKE.PROJ.6HG00559250.1",  # Amy1-1
+        "HORVU.BARKE.PROJ.6HG00559270.1",  # Amy1-1
+        "HORVU.BARKE.PROJ.6HG00561370.1",  # Amy1-2
+        "HORVU.BARKE.PROJ.7HG00653200.1",  # Amy2-1
+        "HORVU.BARKE.PROJ.7HG00653310.1",  # Amy2-3
+        "HORVU.BARKE.PROJ.7HG00653330.1",  # Amy2-2
+        "HORVU.BARKE.PROJ.5HG00441970.1",  # Amy3
+        "HORVU.BARKE.PROJ.2HG00148940.1",  # Amy4-1
+        "HORVU.BARKE.PROJ.3HG00259920.1"   # Amy4-2
+    ),
+    
+    `Beta-amylase` = c(
+        "HORVU.BARKE.PROJ.2HG00126310.1",  # Bam5
+        "HORVU.BARKE.PROJ.2HG00126320.1",  # Bam5
+        "HORVU.BARKE.PROJ.4HG00380960.1",  # Bam5
+        "HORVU.BARKE.PROJ.1HG00036700.1",  # Bam1
+        "HORVU.BARKE.PROJ.1HG00036740.1",  # Bam1
+        "HORVU.BARKE.PROJ.1HG00051030.1",  # Bam3
+        "HORVU.BARKE.PROJ.2HG00105510.1",  # Bam9
+        "HORVU.BARKE.PROJ.3HG00228930.1",  # Bam1
+        "HORVU.BARKE.PROJ.4HG00303690.1",  # Bam2
+        "HORVU.BARKE.PROJ.4HG00376360.1",  # Bam1
+        "HORVU.BARKE.PROJ.6HG00502080.1"   # Bam8
+    ),
+    
+    `Alpha-glucosidase` = c(
+        "HORVU.BARKE.PROJ.7HG00666400.1",  # Agl1
+        "HORVU.BARKE.PROJ.3HG00202550.1",  # Agl2
+        "HORVU.BARKE.PROJ.1HG00052860.1",  # Agl3
+        "HORVU.BARKE.PROJ.4HG00360800.1",  # Agl4
+        "HORVU.BARKE.PROJ.2HG00192840.1",  # Agl1
+        "HORVU.BARKE.PROJ.2HG00192870.1",  # Agl1
+        "HORVU.BARKE.PROJ.2HG00192880.1"   # Agl1
+    ),
+    
+    `Isoamylase` = c(
+        "HORVU.BARKE.PROJ.7HG00618070.1",  # Isa1
+        "HORVU.BARKE.PROJ.1HG00057560.1",  # Isa2
+        "HORVU.BARKE.PROJ.5HG00443610.1",  # Isa3
+        "HORVU.BARKE.PROJ.2HG00149340.1",  # Sbe2-2
+        "HORVU.BARKE.PROJ.2HG00154890.1",  # Sbe2-1
+        "HORVU.BARKE.PROJ.7HG00645630.1",  # Sbe3
+        "HORVU.BARKE.PROJ.7HG00681480.1",  # Sbe2-2
+        "HORVU.BARKE.PROJ.7HG00822990.1",  # Sbe2-2
+        "HORVU.BARKE.PROJ.7HG00823000.1"   # Sbe2-2
+    ), 
+    
+    `Limit dextrinase` = c(
+        "HORVU.BARKE.PROJ.7HG00595270.1"    # Lda
+    ), 
+    
+    `Alpha glucan phosphorylase` = c(
+        "HORVU.BARKE.PROJ.5HG00465050.1",  # Phs1
+        "HORVU.BARKE.PROJ.3HG00275600.1",  # Phs2
+        "HORVU.BARKE.PROJ.2HG00708120.1",  # Phs2
+        "HORVU.BARKE.PROJ.3HG00275620.1"   # Phs2
+    ),
+    Cellulase = c(
+  "HORVU.BARKE.PROJ.1HG00073020.1",  # T2h3-5
+  "HORVU.BARKE.PROJ.1HG00018950.1",  # F9d16-30
+  "HORVU.BARKE.PROJ.3HG00226090.1",  # Gh9c3
+  "HORVU.BARKE.PROJ.4HG00379800.1",  # Gh9c3
+  "HORVU.BARKE.PROJ.2HG00192140.1",  # T21l14-7
+  "HORVU.BARKE.PROJ.5HG00427900.1",  # Cel2
+  "HORVU.BARKE.PROJ.7HG00596870.1",  # T21l14-7
+  "HORVU.BARKE.PROJ.7HG00606250.1",  # T21l14-7
+  "HORVU.BARKE.PROJ.5HG00452800.1",  # F19h22-110
+  "HORVU.BARKE.PROJ.6HG00554880.1",  # Cel1
+  "HORVU.BARKE.PROJ.6HG00561940.1",  # T28a8-150
+  "HORVU.BARKE.PROJ.7HG00653770.1",  # F10a5-13
+  "HORVU.BARKE.PROJ.6HG00508740.1",  # T21l14-7
+  "HORVU.BARKE.PROJ.5HG00453760.1",  # F6f9-1
+  "HORVU.BARKE.PROJ.4HG00311880.1",  # Kor1
+  "HORVU.BARKE.PROJ.6HG00558010.1",  # T21l14-7
+  "HORVU.BARKE.PROJ.5HG00434990.1",  # T21l14-7
+  "HORVU.BARKE.PROJ.1HG00078380.1",  # Gh9c3
+  "HORVU.BARKE.PROJ.7HG00607220.1",  # Cel1
+  "HORVU.BARKE.PROJ.4HG00345900.1",  # Kor1
+  "HORVU.BARKE.PROJ.2HG00162350.1",  # Kor1
+  "HORVU.BARKE.PROJ.1HG00014980.1",  # F4i1-55
+  "HORVU.BARKE.PROJ.2HG00154880.1",  # Cel2
+  "HORVU.BARKE.PROJ.7HG00638840.1"   # Cel5
+),
+
+Lichenase = c(
+  "HORVU.BARKE.PROJ.7HG00679910.1",  # Dl4170c
+  "HORVU.BARKE.PROJ.1HG00053050.1"   # Dl4170c
+),
+
+`Beta-glucosidase` = c(
+  "HORVU.BARKE.PROJ.3HG00279420.1",  # Bglu42
+  "HORVU.BARKE.PROJ.3HG00266610.1",  # Bglc1
+  "HORVU.BARKE.PROJ.3HG00266590.1"   # Bglc1
+),
+
+Arabinofuranosidase = c(
+  "HORVU.BARKE.PROJ.4HG00325990.1",  # Asd1
+  "HORVU.BARKE.PROJ.4HG00326450.1",  # Asd1
+  "HORVU.BARKE.PROJ.5HG00420480.1",  # Asd1
+  "HORVU.BARKE.PROJ.4HG00346830.1",  # Asd1
+  "HORVU.BARKE.PROJ.2HG00101670.1"   # Asd1
+),
+
+Mannanase = c(
+  "HORVU.BARKE.PROJ.3HG00253120.1",  # Man7
+  "HORVU.BARKE.PROJ.5HG00771660.1",  # Man6
+  "HORVU.BARKE.PROJ.6HG00561230.1",  # Man7
+  "HORVU.BARKE.PROJ.6HG00561220.1",  # Man7
+  "HORVU.BARKE.PROJ.5HG00479880.1",  # Man3
+  "HORVU.BARKE.PROJ.3HG00263090.1",  # Man5
+  "HORVU.BARKE.PROJ.7HG00612160.1"   # Man2
+),
+
+`Alpha-galactosidase` = c(
+  "HORVU.BARKE.PROJ.1HG00041210.1",  # Agal2
+  "HORVU.BARKE.PROJ.1HG00041240.1",  # Agal1
+  "HORVU.BARKE.PROJ.6HG00537080.1",  # Apse
+  "HORVU.BARKE.PROJ.6HG00556460.1",  # Apse
+  "HORVU.BARKE.PROJ.5HG00772740.1",  # Agal2
+  "HORVU.BARKE.PROJ.5HG00772750.1",  # Agal1
+  "HORVU.BARKE.PROJ.2HG00102930.1"   # Agal3
+),
+
+Polygalacturonase = c(
+  "HORVU.BARKE.PROJ.5HG00475020.1",  # Adpg2
+  "HORVU.BARKE.PROJ.5HG00475050.1",  # Adpg2
+  "HORVU.BARKE.PROJ.7HG00599930.1",  # Adpg2
+  "HORVU.BARKE.PROJ.4HG00360780.1",  # F18b13-25
+  "HORVU.BARKE.PROJ.6HG00502310.1"   # F24j13-7
+),
+
+`Pectin esterase` = c(
+  "HORVU.BARKE.PROJ.2HG00100460.1",  # Pme21
+  "HORVU.BARKE.PROJ.1HG00054490.1",  # Pme41
+  "HORVU.BARKE.PROJ.2HG00157350.1",  # Pme24
+  "HORVU.BARKE.PROJ.3HG00268440.1",  # Pme44
+  "HORVU.BARKE.PROJ.2HG00188100.1",  # Pme13
+  "HORVU.BARKE.PROJ.5HG00473670.1",  # Pme43
+  "HORVU.BARKE.PROJ.1HG00058460.1",  # Pme17
+  "HORVU.BARKE.PROJ.5HG00437860.1",  # Pme43
+  "HORVU.BARKE.PROJ.4HG00349290.1",  # Pme28
+  "HORVU.BARKE.PROJ.6HG00563120.1",  # Pme3
+  "HORVU.BARKE.PROJ.1HG00085260.1",  # Pme38
+  "HORVU.BARKE.PROJ.2HG00107890.1",  # Pme66
+  "HORVU.BARKE.PROJ.2HG00103570.1",  # Pme44
+  "HORVU.BARKE.PROJ.3HG00230000.1",  # Pme32
+  "HORVU.BARKE.PROJ.3HG00232130.1",  # Pme22
+  "HORVU.BARKE.PROJ.2HG00105250.1",  # Pme66
+  "HORVU.BARKE.PROJ.1HG00045130.1",  # Pme31
+  "HORVU.BARKE.PROJ.1HG00069330.1",  # Pme53
+  "HORVU.BARKE.PROJ.2HG00102050.1",  # Pme53
+  "HORVU.BARKE.PROJ.2HG00115940.1",  # Qrt1
+  "HORVU.BARKE.PROJ.2HG00105260.1",  # Pme66
+  "HORVU.BARKE.PROJ.2HG00171960.1",  # Pme68
+  "HORVU.BARKE.PROJ.2HG00107880.1",  # Pme66
+  "HORVU.BARKE.PROJ.4HG00328640.1",  # Pme63
+  "HORVU.BARKE.PROJ.2HG00154320.1",  # Pme51
+  "HORVU.BARKE.PROJ.3HG00300590.1",  # Pme67
+  "HORVU.BARKE.PROJ.4HG00366450.1",  # Pme8
+  "HORVU.BARKE.PROJ.5HG00391190.1",  # Pme44
+  "HORVU.BARKE.PROJ.6HG00564170.1",  # Pme44
+  "HORVU.BARKE.PROJ.5HG00403060.1",  # Qrt1
+  "HORVU.BARKE.PROJ.7HG00593290.1",  # Pme29
+  "HORVU.BARKE.PROJ.7HG00598930.1",  # Pme2
+  "HORVU.BARKE.PROJ.3HG00280980.1",  # Pme51
+  "HORVU.BARKE.PROJ.7HG00639410.1",  # Pme15
+  "HORVU.BARKE.PROJ.4HG00328630.1"   # Pme63
+),
+`papain-like cysteine endopeptidase` = c(
+  "HORVU.BARKE.PROJ.6HG00551890.1",  # Xcp1
+  "HORVU.BARKE.PROJ.6HG00495640.1",  # F23e12.90
+  "HORVU.BARKE.PROJ.5HG00420360.1",  # Xcp1
+  "HORVU.BARKE.PROJ.1HG00004010.1",  # Xcp2
+  "HORVU.BARKE.PROJ.3HG00278240.1",  # Cep1
+  "HORVU.BARKE.PROJ.6HG00495650.1",  # F28n24.20 
+  "HORVU.BARKE.PROJ.6HG00495660.1",  # F28n24.20 
+  "HORVU.BARKE.PROJ.6HG00495670.1",  # F28n24.20 
+  "HORVU.BARKE.PROJ.6HG00495680.1",  # F28n24.20 
+  "HORVU.BARKE.PROJ.6HG00495690.1",  # F28n24.20 
+  "HORVU.BARKE.PROJ.6HG00495700.1",  # F28n24.20 
+  "HORVU.BARKE.PROJ.6HG00495710.1",  # F28n24.20 
+  "HORVU.BARKE.PROJ.2HG00144580.1",  # Rd19c
+  "HORVU.BARKE.PROJ.2HG00120520.1",  # Rd19d
+  "HORVU.BARKE.PROJ.2HG00186610.1",  # Rd21a
+  "HORVU.BARKE.PROJ.2HG00193350.1",  # Rd21b
+  "HORVU.BARKE.PROJ.1HG00069020.1",  # Xbcp3
+  "HORVU.BARKE.PROJ.5HG00459870.1",  # Cep1
+  "HORVU.BARKE.PROJ.7HG00679480.1",  # F28n24.20
+  "HORVU.BARKE.PROJ.4HG00311230.1",  # Cathb2
+  "HORVU.BARKE.PROJ.2HG00187860.1",  # Cep2
+  "HORVU.BARKE.PROJ.1HG00004790.1",  # F28n24.27
+  "HORVU.BARKE.PROJ.2HG00192770.1",  # Xbcp3
+  "HORVU.BARKE.PROJ.1HG00077400.1",  # Cep1
+  "HORVU.BARKE.PROJ.5HG00386780.1"   # Cep3
+),
+
+`serine endopeptidase` = c(
+  "HORVU.BARKE.PROJ.6HG00555990.1",  # Prss
+  "HORVU.BARKE.PROJ.5HG00440510.1",  # Prss
+  "HORVU.BARKE.PROJ.5HG00396740.1",  # Prss
+  "HORVU.BARKE.PROJ.1HG00044350.1"   # Prss
+),
+
+`aspartic endopeptidase` = c(
+  "HORVU.BARKE.PROJ.1HG00081950.1",  # Apa1
+  "HORVU.BARKE.PROJ.3HG00249950.1",  # Apa2
+  "HORVU.BARKE.PROJ.3HG00291880.1",  # Apa1
+  "HORVU.BARKE.PROJ.6HG00567790.1",  # Apa1
+  "HORVU.BARKE.PROJ.4HG00318350.1",  # F17m5-250
+  "HORVU.BARKE.PROJ.7HG00652070.1",  # Apa1
+  "HORVU.BARKE.PROJ.1HG00016940.1",  # Apa1
+  "HORVU.BARKE.PROJ.5HG00415360.1"   # F17m5-250
+),
+
+Aminopeptidase = c(
+  "HORVU.BARKE.PROJ.5HG00432120.1",  # Apm1
+  "HORVU.BARKE.PROJ.4HG00305500.1",  # Apm1
+  "HORVU.BARKE.PROJ.6HG00524520.1"   # Apm1
+),
+
+`tripeptidyl peptidase` = c(
+  "HORVU.BARKE.PROJ.6HG00545030.1"   # Tpp2
+),
+
+`dipeptidyl peptidase` = c(
+  "HORVU.BARKE.PROJ.5HG00483050.1",  # F8k7-10
+  "HORVU.BARKE.PROJ.5HG00406500.1"   # Mop9-8
+),
+
+Carboxypeptidase = c(
+  "HORVU.BARKE.PROJ.2HG00171920.1",  # Scpl18
+  "HORVU.BARKE.PROJ.5HG00445760.1",  # Scpl9
+  "HORVU.BARKE.PROJ.3HG00215140.1",  # Scpl18
+  "HORVU.BARKE.PROJ.5HG00469870.1",  # Amp1
+  "HORVU.BARKE.PROJ.1HG00008170.1",  # F27d4-19
+  "HORVU.BARKE.PROJ.1HG00018290.1",  # Scpl27
+  "HORVU.BARKE.PROJ.2HG00107460.1",  # Scpl40
+  "HORVU.BARKE.PROJ.1HG00041660.1",  # Scpl51
+  "HORVU.BARKE.PROJ.2HG00144730.1",  # Scpl20
+  "HORVU.BARKE.PROJ.1HG00070610.1",  # Scpl51
+  "HORVU.BARKE.PROJ.1HG00084240.1",  # Scpl50
+  "HORVU.BARKE.PROJ.2HG00171840.1",  # Scpl18
+  "HORVU.BARKE.PROJ.1HG00048630.1",  # Scpl34
+  "HORVU.BARKE.PROJ.2HG00095780.1",  # Scpl50
+  "HORVU.BARKE.PROJ.3HG00265950.1",  # Mpa24-11
+  "HORVU.BARKE.PROJ.3HG00222540.1",  # Scpl27
+  "HORVU.BARKE.PROJ.2HG00148330.1",  # Scpl45
+  "HORVU.BARKE.PROJ.1HG00084350.1",  # Scpl50
+  "HORVU.BARKE.PROJ.2HG00183040.1",  # Scpl49
+  "HORVU.BARKE.PROJ.4HG00316830.1",  # Scpl42
+  "HORVU.BARKE.PROJ.2HG00166340.1",  # Scpl35
+  "HORVU.BARKE.PROJ.3HG00230350.1",  # Scpl33
+  "HORVU.BARKE.PROJ.4HG00304700.1",  # Scpl40
+  "HORVU.BARKE.PROJ.3HG00262480.1",  # F10a2-10
+  "HORVU.BARKE.PROJ.5HG00442780.1",  # Scpl40
+  "HORVU.BARKE.PROJ.4HG00760680.1",  # Scpl51
+  "HORVU.BARKE.PROJ.4HG00311110.1",  # Scpl2
+  "HORVU.BARKE.PROJ.2HG00722350.1",  # Scpl10
+  "HORVU.BARKE.PROJ.5HG00442850.1",  # Scpl28
+  "HORVU.BARKE.PROJ.5HG00442860.1",  # Scpl28
+  "HORVU.BARKE.PROJ.3HG00230360.1",  # Scpl34
+  "HORVU.BARKE.PROJ.6HG00557070.1",  # Scpl49
+  "HORVU.BARKE.PROJ.3HG00262490.1",  # F10a2-10
+  "HORVU.BARKE.PROJ.5HG00442910.1",  # Scpl40
+  "HORVU.BARKE.PROJ.6HG00499600.1",  # Scpl51
+  "HORVU.BARKE.PROJ.5HG00442940.1",  # Scpl40
+  "HORVU.BARKE.PROJ.4HG00364910.1",  # Scpl27
+  "HORVU.BARKE.PROJ.4HG00315620.1",  # Scpl11
+  "HORVU.BARKE.PROJ.7HG00625610.1",  # Scpl51
+  "HORVU.BARKE.PROJ.5HG00442970.1",  # Scpl40
+  "HORVU.BARKE.PROJ.5HG00445740.1",  # Scpl18
+  "HORVU.BARKE.PROJ.7HG00593540.1",  # Scpl3
+  "HORVU.BARKE.PROJ.7HG00668820.1",  # Scpl51
+  "HORVU.BARKE.PROJ.5HG00442890.1",  # Scpl27
+  "HORVU.BARKE.PROJ.6HG00540890.1",  # Scpl34
+  "HORVU.BARKE.PROJ.6HG00494930.1",  # Scpl48
+  "HORVU.BARKE.PROJ.7HG00673840.1",  # F27d4-19
+  "HORVU.BARKE.PROJ.2HG00107490.1",  # Scpl40
+  "HORVU.BARKE.PROJ.4HG00324700.1",  # Scpl40
+  "HORVU.BARKE.PROJ.7HG00653610.1",  # F27d4-19
+  "HORVU.BARKE.PROJ.7HG00656000.1",  # Scpl34
+  "HORVU.BARKE.PROJ.7HG00673290.1",  # Scpl34
+  "HORVU.BARKE.PROJ.7HG00587970.1",  # Sol1
+  "HORVU.BARKE.PROJ.7HG00591350.1",  # F1k23-6
+  "HORVU.BARKE.PROJ.6HG00565120.1",  # Scpl24
+  "HORVU.BARKE.PROJ.3HG00285590.1",  # Scpl20
+  "HORVU.BARKE.PROJ.7HG00597910.1",  # Scpl29
+  "HORVU.BARKE.PROJ.3HG00277430.1",  # Scpl27
+  "HORVU.BARKE.PROJ.6HG00522350.1",  # Scpl45
+  "HORVU.BARKE.PROJ.1HG00063380.1"   # F1p2-60
+),
+
+Lipoxygenase = c(
+  "HORVU.BARKE.PROJ.5HG00383870.1",  # Lox2
+  "HORVU.BARKE.PROJ.4HG00307600.1",  # Lox1
+  "HORVU.BARKE.PROJ.6HG00519710.1",  # Lox2
+  "HORVU.BARKE.PROJ.6HG00490920.1",  # Lox2
+  "HORVU.BARKE.PROJ.4HG00307640.1",  # Lox1
+  "HORVU.BARKE.PROJ.7HG00579310.1",  # Lox2
+  "HORVU.BARKE.PROJ.5HG00462390.1",  # Lox5
+  "HORVU.BARKE.PROJ.2HG00188780.1",  # Lox1
+  "HORVU.BARKE.PROJ.2HG00156010.1",  # Lox3
+  "HORVU.BARKE.PROJ.4HG00369200.1",  # Lox4
+  "HORVU.BARKE.PROJ.4HG00369210.1",  # Lox3
+  "HORVU.BARKE.PROJ.5HG00481340.1",  # Lox1
+  "HORVU.BARKE.PROJ.7HG00616920.1",  # Lox2
+  "HORVU.BARKE.PROJ.2HG00188750.1",  # Lox1
+  "HORVU.BARKE.PROJ.5HG00462410.1",  # Lox1
+  "HORVU.BARKE.PROJ.5HG00462420.1",  # Lox1
+  "HORVU.BARKE.PROJ.5HG00462430.1",  # Lox1
+  "HORVU.BARKE.PROJ.5HG00462440.1",  # Lox1
+  "HORVU.BARKE.PROJ.1HG00050580.1",  # Lox5
+  "HORVU.BARKE.PROJ.4HG00760420.1"   # Lox2
+),
+
+`allene oxide synthase` = c(
+  "HORVU.BARKE.PROJ.4HG00359600.1",  # Aos
+  "HORVU.BARKE.PROJ.4HG00359650.1"   # Aos
+),
+
+`acid phosphatase` = c(
+  "HORVU.BARKE.PROJ.1HG00004770.1",  # Pap22
+  "HORVU.BARKE.PROJ.1HG00078980.1",  # Pap27
+  "HORVU.BARKE.PROJ.2HG00164150.1",  # Pap3
+  "HORVU.BARKE.PROJ.3HG00231330.1",  # Pap15
+  "HORVU.BARKE.PROJ.5HG00448690.1",  # Pap27
+  "HORVU.BARKE.PROJ.5HG00417950.1",  # Pap20
+  "HORVU.BARKE.PROJ.5HG00430080.1",  # Pap23
+  "HORVU.BARKE.PROJ.6HG00507050.1",  # Pap18
+  "HORVU.BARKE.PROJ.5HG00417910.1",  # Pap21
+  "HORVU.BARKE.PROJ.5HG00448710.1",  # Pap27
+  "HORVU.BARKE.PROJ.7HG00675360.1",  # Pap26
+  "HORVU.BARKE.PROJ.7HG00620380.1",  # Pap27
+  "HORVU.BARKE.PROJ.2HG00149170.1",  # Pap22
+  "HORVU.BARKE.PROJ.2HG00185580.1",  # Pap22
+  "HORVU.BARKE.PROJ.5HG00454460.1",  # Pap15
+  "HORVU.BARKE.PROJ.5HG00419620.1",  # Pap23
+  "HORVU.BARKE.PROJ.3HG00267210.1",  # Pap10
+  "HORVU.BARKE.PROJ.4HG00361290.1",  # Pap27
+  "HORVU.BARKE.PROJ.2HG00142220.1",  # Pap2
+  "HORVU.BARKE.PROJ.5HG00472100.1",  # Pap9
+  "HORVU.BARKE.PROJ.2HG00112820.1",  # Pap3
+  "HORVU.BARKE.PROJ.5HG00400860.1",  # Pap27
+  "HORVU.BARKE.PROJ.4HG00376810.1",  # Pap27
+  "HORVU.BARKE.PROJ.6HG00565200.1",  # Pap10
+  "HORVU.BARKE.PROJ.4HG00358100.1",  # Pap3
+  "HORVU.BARKE.PROJ.5HG00475530.1",  # Pap10
+  "HORVU.BARKE.PROJ.4HG00372650.1",  # Pap10
+  "HORVU.BARKE.PROJ.3HG00269070.1",  # Pap27
+  "HORVU.BARKE.PROJ.2HG00124710.1",  # Pap
+  "HORVU.BARKE.PROJ.1HG00084950.1",  # Pap1
+  "HORVU.BARKE.PROJ.6HG00793860.1",  # Pap
+  "HORVU.BARKE.PROJ.6HG00797590.1",  # Pap1
+  "HORVU.BARKE.PROJ.7HG00629580.1",  # Pap1
+  "HORVU.BARKE.PROJ.4HG00755000.1",  # Pap10
+  "HORVU.BARKE.PROJ.6HG00533910.1"   # F28i8-17
+),
+
+Catalase = c(
+  "HORVU.BARKE.PROJ.6HG00495590.1",  # Cat3
+  "HORVU.BARKE.PROJ.7HG00681400.1",  # Cat2
+  "HORVU.BARKE.PROJ.4HG00374170.1"   # Cat2
+),
+
+`superoxide dismutase` = c(
+  "HORVU.BARKE.PROJ.2HG00190130.1",  # Msd1
+  "HORVU.BARKE.PROJ.2HG00105600.1",  # Csd1
+  "HORVU.BARKE.PROJ.4HG00360670.1",  # Csd3
+  "HORVU.BARKE.PROJ.5HG00440200.1",  # Csd1
+  "HORVU.BARKE.PROJ.5HG00440830.1",  # Csd1
+  "HORVU.BARKE.PROJ.7HG00580950.1",  # Fsd2
+  "HORVU.BARKE.PROJ.7HG00588580.1",  # Fsd3
+  "HORVU.BARKE.PROJ.7HG00625840.1"   # Csd2
+),
+
+`polyphenol oxidase` = c(
+  "HORVU.BARKE.PROJ.3HG00268620.1",  # Ppo
+  "HORVU.BARKE.PROJ.2HG00177380.1",  # Ppo1
+  "HORVU.BARKE.PROJ.2HG00177440.1"   # Po0
+)
+
+
+)
+barke_gene_map <- c(
+
+  # =========================
+  # Alpha-amylase
+  # =========================
+  "HORVU.BARKE.PROJ.6HG00559210.1" = "Amy1-1.1",
+  "HORVU.BARKE.PROJ.6HG00559200.1" = "Amy1-1.2",
+  "HORVU.BARKE.PROJ.6HG00559230.1" = "Amy1-1.3",
+  "HORVU.BARKE.PROJ.6HG00559240.1" = "Amy1-1.4",
+  "HORVU.BARKE.PROJ.6HG00559250.1" = "Amy1-1.5",
+  "HORVU.BARKE.PROJ.6HG00559270.1" = "Amy1-1.6",
+  "HORVU.BARKE.PROJ.6HG00561370.1" = "Amy1-2",
+  "HORVU.BARKE.PROJ.7HG00653200.1" = "Amy2-1",
+  "HORVU.BARKE.PROJ.7HG00653330.1" = "Amy2-2",
+  "HORVU.BARKE.PROJ.7HG00653310.1" = "Amy2-3",
+  "HORVU.BARKE.PROJ.5HG00441970.1" = "Amy3",
+  "HORVU.BARKE.PROJ.2HG00148940.1" = "Amy4-1",
+  "HORVU.BARKE.PROJ.3HG00259920.1" = "Amy4-2",
+
+# =========================
+# Beta-amylase
+# =========================
+"HORVU.BARKE.PROJ.4HG00380960.1" = "Bmy1",
+"HORVU.BARKE.PROJ.2HG00126310.1" = "Bmy2",
+"HORVU.BARKE.PROJ.1HG00036700.1" = "Bmy.1",
+"HORVU.BARKE.PROJ.1HG00036740.1" = "Bmy.2",
+"HORVU.BARKE.PROJ.3HG00228930.1" = "Bmy.3",
+"HORVU.BARKE.PROJ.4HG00376360.1" = "Bmy.4",
+
+"HORVU.BARKE.PROJ.4HG00303690.1" = "Bmy.5",
+
+"HORVU.BARKE.PROJ.1HG00051030.1" = "Bmy.6",
+
+"HORVU.BARKE.PROJ.2HG00126320.1" = "Bmy.7",
+
+"HORVU.BARKE.PROJ.6HG00502080.1" = "Bmy.8",
+
+"HORVU.BARKE.PROJ.2HG00105510.1" = "Bmy.9",
+
+# =========================
+# Alpha-glucosidase
+# =========================
+"HORVU.BARKE.PROJ.7HG00666400.1" = "Agl1",
+"HORVU.BARKE.PROJ.3HG00202550.1" = "Agl2",
+
+"HORVU.BARKE.PROJ.1HG00052860.1" = "Agl3",
+
+"HORVU.BARKE.PROJ.4HG00360800.1" = "Agl4",
+"HORVU.BARKE.PROJ.2HG00192840.1" = "Agl.1",
+"HORVU.BARKE.PROJ.2HG00192870.1" = "Agl.2",
+"HORVU.BARKE.PROJ.2HG00192880.1" = "Agl.3",
+"HORVU.BARKE.PROJ.3HG00234540.1" = "Agl.4",
+"HORVU.BARKE.PROJ.6HG00561650.1" = "Agl.5",
+"HORVU.BARKE.PROJ.7HG00595360.1" = "Agl.6",
+
+
+        
+
+# =========================
+# Isoamylase / Branching enzymes
+# =========================
+"HORVU.BARKE.PROJ.7HG00618070.1" = "Iso1",
+
+"HORVU.BARKE.PROJ.1HG00057560.1" = "Iso2",
+
+"HORVU.BARKE.PROJ.5HG00443610.1" = "Iso3",
+
+"HORVU.BARKE.PROJ.2HG00154890.1" = "Iso.1",
+
+"HORVU.BARKE.PROJ.2HG00149340.1" = "Iso.2",
+"HORVU.BARKE.PROJ.7HG00681480.1" = "Iso.3",
+"HORVU.BARKE.PROJ.7HG00822990.1" = "Iso.4",
+"HORVU.BARKE.PROJ.7HG00823000.1" = "Iso.5",
+
+"HORVU.BARKE.PROJ.7HG00645630.1" = "Iso.6",
+
+# =========================
+# Limit dextrinase
+# =========================
+"HORVU.BARKE.PROJ.7HG00595270.1" = "Lda",
+
+# =========================
+# Alpha glucan phosphorylase
+# =========================
+"HORVU.BARKE.PROJ.5HG00465050.1" = "Phs1",
+
+"HORVU.BARKE.PROJ.3HG00275600.1" = "Phs2.1",
+"HORVU.BARKE.PROJ.2HG00708120.1" = "Phs2.2",
+"HORVU.BARKE.PROJ.3HG00275620.1" = "Phs2.3",
+
+# =========================
+# Cellulases / GH9 / KOR
+# =========================
+"HORVU.BARKE.PROJ.1HG00014980.1" = "CelB2",
+"HORVU.BARKE.PROJ.1HG00018950.1" = "CelB6",
+"HORVU.BARKE.PROJ.7HG00638840.1" = "Cel13",
+"HORVU.BARKE.PROJ.2HG00162350.1" = "Cel5",
+"HORVU.BARKE.PROJ.6HG00554880.1" = "Cel16",
+"HORVU.BARKE.PROJ.7HG00607220.1" = "Cel.1",
+
+"HORVU.BARKE.PROJ.5HG00427900.1" = "Cel.2",
+"HORVU.BARKE.PROJ.2HG00154880.1" = "Cel.3",
+
+
+"HORVU.BARKE.PROJ.3HG00226090.1" = "Cel.4",
+"HORVU.BARKE.PROJ.4HG00379800.1" = "Cel.5",
+"HORVU.BARKE.PROJ.1HG00078380.1" = "Cel.6",
+
+"HORVU.BARKE.PROJ.4HG00311880.1" = "Cel.7",
+"HORVU.BARKE.PROJ.4HG00345900.1" = "Cel.8",
+
+"HORVU.BARKE.PROJ.1HG00073020.1" = "Cel.9",
+
+"HORVU.BARKE.PROJ.2HG00192140.1" = "Cel.10",
+"HORVU.BARKE.PROJ.7HG00596870.1" = "Cel.11",
+"HORVU.BARKE.PROJ.7HG00606250.1" = "Cel.12",
+"HORVU.BARKE.PROJ.6HG00508740.1" = "Cel.13",
+"HORVU.BARKE.PROJ.6HG00558010.1" = "Cel.14",
+"HORVU.BARKE.PROJ.5HG00434990.1" = "Cel.15",
+
+"HORVU.BARKE.PROJ.6HG00561940.1" = "Cel.16",
+
+"HORVU.BARKE.PROJ.7HG00653770.1" = "Cel.17",
+
+"HORVU.BARKE.PROJ.5HG00452800.1" = "Cel.18",
+
+
+"HORVU.BARKE.PROJ.5HG00453760.1" = "Cel.19",
+
+
+
+  # =========================
+# Lichenase
+# =========================
+"HORVU.BARKE.PROJ.1HG00053050.1" = "Glb1",
+"HORVU.BARKE.PROJ.7HG00679910.1" = "Glb2",
+
+# =========================
+# Beta-glucosidase
+# =========================
+"HORVU.BARKE.PROJ.3HG00266610.1" = "Bglc.1",
+"HORVU.BARKE.PROJ.3HG00266590.1" = "Bglc.2",
+
+"HORVU.BARKE.PROJ.3HG00279420.1" = "Bglc.3",
+
+# =========================
+# Arabinofuranosidase
+# =========================
+"HORVU.BARKE.PROJ.2HG00101670.1" = "Asd.1",
+"HORVU.BARKE.PROJ.4HG00325990.1" = "Asd.2",
+"HORVU.BARKE.PROJ.4HG00326450.1" = "Asd.3",
+"HORVU.BARKE.PROJ.4HG00346830.1" = "Asd.4",
+"HORVU.BARKE.PROJ.5HG00420480.1" = "Asd.5",
+
+# =========================
+# Mannanase
+# =========================
+"HORVU.BARKE.PROJ.7HG00612160.1" = "Man.1",
+"HORVU.BARKE.PROJ.5HG00479880.1" = "Man.2",
+"HORVU.BARKE.PROJ.3HG00263090.1" = "Man.3",
+"HORVU.BARKE.PROJ.5HG00771660.1" = "Man.4",
+"HORVU.BARKE.PROJ.3HG00253120.1" = "Man.5",
+"HORVU.BARKE.PROJ.6HG00561220.1" = "Man.6",
+"HORVU.BARKE.PROJ.6HG00561230.1" = "Man.7",
+
+# =========================
+# Alpha-galactosidase
+# =========================
+"HORVU.BARKE.PROJ.1HG00041240.1" = "Agal.1",
+"HORVU.BARKE.PROJ.5HG00772750.1" = "Agal.2",
+"HORVU.BARKE.PROJ.1HG00041210.1" = "Agal.3",
+"HORVU.BARKE.PROJ.5HG00772740.1" = "Agal.4",
+"HORVU.BARKE.PROJ.2HG00102930.1" = "Agal.5",
+"HORVU.BARKE.PROJ.6HG00537080.1" = "Agal.6",
+"HORVU.BARKE.PROJ.6HG00556460.1" = "Agal.7",
+
+# =========================
+# Polygalacturonase
+# =========================
+"HORVU.BARKE.PROJ.5HG00475020.1" = "Pg.1",
+"HORVU.BARKE.PROJ.5HG00475050.1" = "Pg.2",
+"HORVU.BARKE.PROJ.7HG00599930.1" = "Pg.3",
+"HORVU.BARKE.PROJ.4HG00360780.1" = "Pg.4",
+"HORVU.BARKE.PROJ.6HG00502310.1" = "Pg.5",
+
+# =========================
+# Pectin esterase
+# =========================
+"HORVU.BARKE.PROJ.7HG00598930.1" = "Pme.1",
+"HORVU.BARKE.PROJ.6HG00563120.1" = "Pme.2",
+"HORVU.BARKE.PROJ.4HG00366450.1" = "Pme.3",
+"HORVU.BARKE.PROJ.2HG00188100.1" = "Pme.4",
+"HORVU.BARKE.PROJ.7HG00639410.1" = "Pme.5",
+"HORVU.BARKE.PROJ.1HG00058460.1" = "Pme.6",
+"HORVU.BARKE.PROJ.2HG00100460.1" = "Pme.7",
+"HORVU.BARKE.PROJ.3HG00232130.1" = "Pme.8",
+"HORVU.BARKE.PROJ.2HG00157350.1" = "Pme.9",
+"HORVU.BARKE.PROJ.4HG00349290.1" = "Pme.10",
+"HORVU.BARKE.PROJ.7HG00593290.1" = "Pme.11",
+"HORVU.BARKE.PROJ.1HG00045130.1" = "Pme.12",
+"HORVU.BARKE.PROJ.3HG00230000.1" = "Pme.13",
+"HORVU.BARKE.PROJ.1HG00085260.1" = "Pme.14",
+"HORVU.BARKE.PROJ.1HG00054490.1" = "Pme.15",
+"HORVU.BARKE.PROJ.5HG00473670.1" = "Pme.16",
+"HORVU.BARKE.PROJ.5HG00437860.1" = "Pme.17",
+"HORVU.BARKE.PROJ.3HG00268440.1" = "Pme.18",
+"HORVU.BARKE.PROJ.2HG00103570.1" = "Pme.19",
+"HORVU.BARKE.PROJ.5HG00391190.1" = "Pme.20",
+"HORVU.BARKE.PROJ.6HG00564170.1" = "Pme.21",
+"HORVU.BARKE.PROJ.2HG00154320.1" = "Pme.22",
+"HORVU.BARKE.PROJ.3HG00280980.1" = "Pme.23",
+"HORVU.BARKE.PROJ.1HG00069330.1" = "Pme.24",
+"HORVU.BARKE.PROJ.2HG00102050.1" = "Pme.25",
+"HORVU.BARKE.PROJ.4HG00328630.1" = "Pme.26",
+"HORVU.BARKE.PROJ.4HG00328640.1" = "Pme.27",
+"HORVU.BARKE.PROJ.2HG00107880.1" = "Pme.28",
+"HORVU.BARKE.PROJ.2HG00107890.1" = "Pme.29",
+"HORVU.BARKE.PROJ.2HG00105250.1" = "Pme.30",
+"HORVU.BARKE.PROJ.2HG00105260.1" = "Pme.31",
+"HORVU.BARKE.PROJ.3HG00300590.1" = "Pme.32",
+"HORVU.BARKE.PROJ.2HG00171960.1" = "Pme.33",
+"HORVU.BARKE.PROJ.2HG00115940.1" = "Pme.34",
+"HORVU.BARKE.PROJ.5HG00403060.1" = "Pme.35",
+
+# =========================
+# Papain-like cysteine endopeptidase
+# =========================
+"HORVU.BARKE.PROJ.5HG00420360.1" = "Pap4",
+"HORVU.BARKE.PROJ.1HG00004010.1" = "Pap5",
+"HORVU.BARKE.PROJ.3HG00278240.1" = "Pap14",
+"HORVU.BARKE.PROJ.4HG00311230.1" = "Pap20",
+"HORVU.BARKE.PROJ.2HG00192770.1" = "Pap24",
+# XCPs
+"HORVU.BARKE.PROJ.6HG00551890.1" = "Pap.1",
+
+# CEPs
+
+"HORVU.BARKE.PROJ.5HG00459870.1" = "Pap.2",
+"HORVU.BARKE.PROJ.1HG00077400.1" = "Pap.3",
+"HORVU.BARKE.PROJ.2HG00187860.1" = "Pap.4",
+"HORVU.BARKE.PROJ.5HG00386780.1" = "Pap.5",
+
+# RDs
+"HORVU.BARKE.PROJ.2HG00144580.1" = "Pap.6",
+"HORVU.BARKE.PROJ.2HG00120520.1" = "Pap.7",
+"HORVU.BARKE.PROJ.2HG00186610.1" = "Pap.8",
+"HORVU.BARKE.PROJ.2HG00193350.1" = "Pap.9",
+
+# XBCPs
+"HORVU.BARKE.PROJ.1HG00069020.1" = "Pap.10",
+
+# F23E12 / F28N24 cluster
+"HORVU.BARKE.PROJ.6HG00495640.1" = "Pap.11",
+"HORVU.BARKE.PROJ.6HG00495650.1" = "Pap.12",
+"HORVU.BARKE.PROJ.6HG00495660.1" = "Pap.13",
+"HORVU.BARKE.PROJ.6HG00495670.1" = "Pap.14",
+"HORVU.BARKE.PROJ.6HG00495680.1" = "Pap.15",
+"HORVU.BARKE.PROJ.6HG00495690.1" = "Pap.16",
+"HORVU.BARKE.PROJ.6HG00495700.1" = "Pap.17",
+"HORVU.BARKE.PROJ.6HG00495710.1" = "Pap.18",
+"HORVU.BARKE.PROJ.7HG00679480.1" = "Pap.19",
+"HORVU.BARKE.PROJ.1HG00004790.1" = "Pap.20",
+
+# =========================
+# Serine endopeptidase
+# =========================
+"HORVU.BARKE.PROJ.1HG00044350.1" = "Prs.1",
+"HORVU.BARKE.PROJ.5HG00396740.1" = "Prs.2",
+"HORVU.BARKE.PROJ.5HG00440510.1" = "Prs.3",
+"HORVU.BARKE.PROJ.6HG00555990.1" = "Prs.4",
+
+# =========================
+# Aspartic endopeptidase
+# =========================
+
+# APA family
+"HORVU.BARKE.PROJ.1HG00081950.1" = "Apa.1",
+"HORVU.BARKE.PROJ.3HG00291880.1" = "Apa.2",
+"HORVU.BARKE.PROJ.6HG00567790.1" = "Apa.3",
+"HORVU.BARKE.PROJ.7HG00652070.1" = "Apa.4",
+"HORVU.BARKE.PROJ.1HG00016940.1" = "Apa.5",
+"HORVU.BARKE.PROJ.3HG00249950.1" = "Apa.6",
+
+# F17M5 cluster
+"HORVU.BARKE.PROJ.4HG00318350.1" = "Apa.7",
+"HORVU.BARKE.PROJ.5HG00415360.1" = "Apa.8",
+
+# =========================
+# Aminopeptidase
+# =========================
+"HORVU.BARKE.PROJ.4HG00305500.1" = "Apm.1",
+"HORVU.BARKE.PROJ.5HG00432120.1" = "Apm.2",
+"HORVU.BARKE.PROJ.6HG00524520.1" = "Apm.3",
+
+# =========================
+# Tripeptidyl peptidase
+# =========================
+"HORVU.BARKE.PROJ.6HG00545030.1" = "Tpp",
+
+# =========================
+# Dipeptidyl peptidase
+# =========================
+"HORVU.BARKE.PROJ.5HG00406500.1" = "Mop.1",
+"HORVU.BARKE.PROJ.5HG00483050.1" = "Mop.2",
+# =========================
+# Carboxypeptidase (SCPL family etc.)
+# =========================
+
+# Non-SCPL
+"HORVU.BARKE.PROJ.3HG00285590.1" = "Cbp1",
+"HORVU.BARKE.PROJ.7HG00597910.1" = "Cbp2",
+"HORVU.BARKE.PROJ.5HG00469870.1" = "Cbp.1",
+"HORVU.BARKE.PROJ.3HG00265950.1" = "Cbp.2",
+"HORVU.BARKE.PROJ.7HG00587970.1" = "Cbp.3",
+"HORVU.BARKE.PROJ.7HG00591350.1" = "Cbp.4",
+"HORVU.BARKE.PROJ.1HG00063380.1" = "Cbp.5",
+
+# F27D4 cluster
+"HORVU.BARKE.PROJ.1HG00008170.1" = "Cbp.6",
+"HORVU.BARKE.PROJ.7HG00673840.1" = "Cbp.7",
+"HORVU.BARKE.PROJ.7HG00653610.1" = "Cbp.8",
+
+# F10A2 cluster
+"HORVU.BARKE.PROJ.3HG00262480.1" = "Cbp.9",
+"HORVU.BARKE.PROJ.3HG00262490.1" = "Cbp.10",
+
+# SCPL family numerically ordered
+"HORVU.BARKE.PROJ.4HG00311110.1" = "Cbp.11",
+"HORVU.BARKE.PROJ.7HG00593540.1" = "Cbp.12",
+
+"HORVU.BARKE.PROJ.2HG00722350.1" = "Cbp.13",
+"HORVU.BARKE.PROJ.4HG00315620.1" = "Cbp.14",
+
+"HORVU.BARKE.PROJ.2HG00171920.1" = "Cbp.15",
+"HORVU.BARKE.PROJ.3HG00215140.1" = "Cbp.16",
+"HORVU.BARKE.PROJ.2HG00171840.1" = "Cbp.17",
+"HORVU.BARKE.PROJ.5HG00445740.1" = "Cbp.18",
+
+"HORVU.BARKE.PROJ.2HG00144730.1" = "Cbp.19",
+
+"HORVU.BARKE.PROJ.6HG00565120.1" = "Cbp.20",
+
+"HORVU.BARKE.PROJ.1HG00018290.1" = "Cbp.21",
+"HORVU.BARKE.PROJ.3HG00222540.1" = "Cbp.22",
+"HORVU.BARKE.PROJ.4HG00364910.1" = "Cbp.23",
+"HORVU.BARKE.PROJ.5HG00442890.1" = "Cbp.24",
+"HORVU.BARKE.PROJ.3HG00277430.1" = "Cbp.25",
+
+"HORVU.BARKE.PROJ.5HG00442850.1" = "Cbp.26",
+"HORVU.BARKE.PROJ.5HG00442860.1" = "Cbp.27",
+
+"HORVU.BARKE.PROJ.3HG00230350.1" = "Cbp.28",
+
+"HORVU.BARKE.PROJ.1HG00048630.1" = "Cbp.29",
+"HORVU.BARKE.PROJ.3HG00230360.1" = "Cbp.30",
+"HORVU.BARKE.PROJ.6HG00540890.1" = "Cbp.31",
+"HORVU.BARKE.PROJ.7HG00656000.1" = "Cbp.32",
+"HORVU.BARKE.PROJ.7HG00673290.1" = "Cbp.33",
+
+"HORVU.BARKE.PROJ.2HG00166340.1" = "Cbp.34",
+
+"HORVU.BARKE.PROJ.2HG00107460.1" = "Cbp.35",
+"HORVU.BARKE.PROJ.4HG00304700.1" = "Cbp.36",
+"HORVU.BARKE.PROJ.5HG00442780.1" = "Cbp.37",
+"HORVU.BARKE.PROJ.5HG00442910.1" = "Cbp.38",
+"HORVU.BARKE.PROJ.5HG00442940.1" = "Cbp.39",
+"HORVU.BARKE.PROJ.5HG00442970.1" = "Cbp.40",
+"HORVU.BARKE.PROJ.2HG00107490.1" = "Cbp.41",
+"HORVU.BARKE.PROJ.4HG00324700.1" = "Cbp.42",
+
+"HORVU.BARKE.PROJ.4HG00316830.1" = "Cbp.43",
+
+"HORVU.BARKE.PROJ.2HG00148330.1" = "Cbp.44",
+"HORVU.BARKE.PROJ.6HG00522350.1" = "Cbp.45",
+
+"HORVU.BARKE.PROJ.6HG00494930.1" = "Cbp.46",
+
+"HORVU.BARKE.PROJ.2HG00183040.1" = "Cbp.47",
+"HORVU.BARKE.PROJ.6HG00557070.1" = "Cbp.48",
+
+"HORVU.BARKE.PROJ.1HG00084240.1" = "Cbp.49",
+"HORVU.BARKE.PROJ.2HG00095780.1" = "Cbp.50",
+"HORVU.BARKE.PROJ.1HG00084350.1" = "Cbp.51",
+
+"HORVU.BARKE.PROJ.1HG00041660.1" = "Cbp.52",
+"HORVU.BARKE.PROJ.1HG00070610.1" = "Cbp.53",
+"HORVU.BARKE.PROJ.4HG00760680.1" = "Cbp.54",
+"HORVU.BARKE.PROJ.6HG00499600.1" = "Cbp.55",
+"HORVU.BARKE.PROJ.7HG00625610.1" = "Cbp.56",
+"HORVU.BARKE.PROJ.7HG00668820.1" = "Cbp.57",
+
+
+# =========================
+# Lipoxygenase
+# =========================
+
+# Lox1
+"HORVU.BARKE.PROJ.4HG00307600.1" = "Lox1",
+"HORVU.BARKE.PROJ.4HG00307640.1" = "Lox.1",
+"HORVU.BARKE.PROJ.2HG00188780.1" = "Lox.2",
+"HORVU.BARKE.PROJ.5HG00481340.1" = "Lox.3",
+"HORVU.BARKE.PROJ.2HG00188750.1" = "Lox.4",
+"HORVU.BARKE.PROJ.5HG00462410.1" = "Lox.5",
+"HORVU.BARKE.PROJ.5HG00462420.1" = "Lox.6",
+"HORVU.BARKE.PROJ.5HG00462430.1" = "Lox.7",
+"HORVU.BARKE.PROJ.5HG00462440.1" = "Lox.8",
+
+# Lox2
+"HORVU.BARKE.PROJ.5HG00383870.1" = "Lox.9",
+"HORVU.BARKE.PROJ.6HG00519710.1" = "Lox.10",
+"HORVU.BARKE.PROJ.6HG00490920.1" = "Lox.11",
+"HORVU.BARKE.PROJ.7HG00579310.1" = "Lox.12",
+"HORVU.BARKE.PROJ.7HG00616920.1" = "Lox.13",
+"HORVU.BARKE.PROJ.4HG00760420.1" = "Lox.14",
+
+# Lox3
+"HORVU.BARKE.PROJ.2HG00156010.1" = "Lox.15",
+"HORVU.BARKE.PROJ.4HG00369210.1" = "Lox.16",
+
+# Lox4
+"HORVU.BARKE.PROJ.4HG00369200.1" = "Lox.17",
+
+# Lox5
+"HORVU.BARKE.PROJ.5HG00462390.1" = "Lox.18",
+"HORVU.BARKE.PROJ.1HG00050580.1" = "Lox.19",
+
+# =========================
+# Allene oxide synthase
+# =========================
+"HORVU.BARKE.PROJ.4HG00359600.1" = "Aos.1",
+"HORVU.BARKE.PROJ.4HG00359650.1" = "Aos.2",
+
+# =========================
+# Acid phosphatase
+# =========================
+
+# Pap (unspecified)
+"HORVU.BARKE.PROJ.2HG00124710.1" = "Paph.1",
+"HORVU.BARKE.PROJ.6HG00793860.1" = "Paph.2",
+
+# Pap1
+"HORVU.BARKE.PROJ.1HG00084950.1" = "Paph.3",
+"HORVU.BARKE.PROJ.6HG00797590.1" = "Paph.4",
+"HORVU.BARKE.PROJ.7HG00629580.1" = "Paph.5",
+
+# Pap2–3
+"HORVU.BARKE.PROJ.2HG00142220.1" = "Paph.6",
+"HORVU.BARKE.PROJ.2HG00164150.1" = "Paph.7",
+"HORVU.BARKE.PROJ.2HG00112820.1" = "Paph.8",
+"HORVU.BARKE.PROJ.4HG00358100.1" = "Paph.9",
+
+# Pap9–10
+"HORVU.BARKE.PROJ.5HG00472100.1" = "Paph.10",
+"HORVU.BARKE.PROJ.3HG00267210.1" = "Paph.11",
+"HORVU.BARKE.PROJ.6HG00565200.1" = "Paph.12",
+"HORVU.BARKE.PROJ.5HG00475530.1" = "Paph.13",
+"HORVU.BARKE.PROJ.4HG00372650.1" = "Paph.14",
+"HORVU.BARKE.PROJ.4HG00755000.1" = "Paph.15",
+
+# Pap15
+"HORVU.BARKE.PROJ.3HG00231330.1" = "Paph.16",
+"HORVU.BARKE.PROJ.5HG00454460.1" = "Paph.17",
+
+# Pap18–23
+"HORVU.BARKE.PROJ.6HG00507050.1" = "Paph.18",
+"HORVU.BARKE.PROJ.5HG00417950.1" = "Paph.19",
+"HORVU.BARKE.PROJ.5HG00417910.1" = "Paph.20",
+"HORVU.BARKE.PROJ.1HG00004770.1" = "Paph.21",
+"HORVU.BARKE.PROJ.2HG00149170.1" = "Paph.22",
+"HORVU.BARKE.PROJ.2HG00185580.1" = "Paph.23",
+"HORVU.BARKE.PROJ.5HG00430080.1" = "Paph.24",
+"HORVU.BARKE.PROJ.5HG00419620.1" = "Paph.25",
+
+# Pap26–27
+"HORVU.BARKE.PROJ.7HG00675360.1" = "Paph.26",
+"HORVU.BARKE.PROJ.1HG00078980.1" = "Paph.27",
+"HORVU.BARKE.PROJ.5HG00448690.1" = "Paph.28",
+"HORVU.BARKE.PROJ.5HG00448710.1" = "Paph.29",
+"HORVU.BARKE.PROJ.7HG00620380.1" = "Paph.30",
+"HORVU.BARKE.PROJ.4HG00361290.1" = "Paph.31",
+"HORVU.BARKE.PROJ.5HG00400860.1" = "Paph.32",
+"HORVU.BARKE.PROJ.4HG00376810.1" = "Paph.33",
+"HORVU.BARKE.PROJ.3HG00269070.1" = "Paph.34",
+
+# Other
+"HORVU.BARKE.PROJ.6HG00533910.1" = "Paph.35",
+# =========================
+  # Catalase
+  # =========================
+"HORVU.BARKE.PROJ.7HG00681400.1" = "Cat.1",
+"HORVU.BARKE.PROJ.4HG00374170.1" = "Cat.2",
+"HORVU.BARKE.PROJ.6HG00495590.1" = "Cat.3",
+
+  # =========================
+# Superoxide dismutase
+# =========================
+
+# CSDs
+"HORVU.BARKE.PROJ.2HG00105600.1" = "Csd.1",
+"HORVU.BARKE.PROJ.5HG00440200.1" = "Csd.2",
+"HORVU.BARKE.PROJ.5HG00440830.1" = "Csd.3",
+"HORVU.BARKE.PROJ.7HG00625840.1" = "Csd.4",
+"HORVU.BARKE.PROJ.4HG00360670.1" = "Csd.5",
+
+# FSDs
+"HORVU.BARKE.PROJ.7HG00580950.1" = "Csd.6",
+"HORVU.BARKE.PROJ.7HG00588580.1" = "Csd.7",
+
+# MSD
+"HORVU.BARKE.PROJ.2HG00190130.1" = "Csd.8",
+
+  # =========================
+# Polyphenol oxidase
+# =========================
+"HORVU.BARKE.PROJ.3HG00268620.1" = "Ppo.1",
+"HORVU.BARKE.PROJ.2HG00177380.1" = "Ppo.2",
+"HORVU.BARKE.PROJ.2HG00177440.1" = "Ppo.3"
+)
+
+# ================================================================
+# 1) Family → Category mapping (FULL EXPLICIT)
+# ================================================================
+family_category <- c(
+  # ---------------- Starch ----------------
+  "Alpha-amylase"              = "Starch degradation",
+  "Beta-amylase"               = "Starch degradation",
+  "Alpha-glucosidase"          = "Starch degradation",
+  "Isoamylase"                 = "Starch degradation",
+  "Limit dextrinase"           = "Starch degradation",
+  "Alpha glucan phosphorylase" = "Starch degradation",
+
+  # ---------------- Cell wall ----------------
+  "Cellulase"           = "Cell wall degradation",
+  "Lichenase"           = "Cell wall degradation",
+  "Beta-glucosidase"    = "Cell wall degradation",
+  "Arabinofuranosidase" = "Cell wall degradation",
+  "Mannanase"           = "Cell wall degradation",
+  "Alpha-galactosidase" = "Cell wall degradation",
+  "Polygalacturonase"   = "Cell wall degradation",
+  "Pectin esterase"     = "Cell wall degradation",
+
+  # ---------------- Protein ----------------
+  "serine endopeptidase"                = "Protein degradation",
+  "papain-like cysteine endopeptidase" = "Protein degradation",
+  "aspartic endopeptidase"             = "Protein degradation",
+  "Aminopeptidase"                     = "Protein degradation",
+  "tripeptidyl peptidase"              = "Protein degradation",
+  "dipeptidyl peptidase"               = "Protein degradation",
+  "Carboxypeptidase"                   = "Protein degradation",
+
+  # ---------------- Lipid ----------------
+  "Lipoxygenase"          = "Lipid degradation",
+  "allene oxide synthase" = "Lipid degradation",
+
+  # ---------------- Other ----------------
+  "acid phosphatase"     = "Other",
+  "Catalase"             = "Other",
+  "superoxide dismutase" = "Other",
+  "polyphenol oxidase"   = "Other"
+)
+
+# ================================================================
+# 2) Collect Hv6 proteins
+# ================================================================
+id_cols <- grep("Protein", names(Hv6_final_matrix), value = TRUE)
+if (length(id_cols) == 0) {
+  stop("No columns containing protein IDs found in Hv6_final_matrix")
+}
+
+malting_rows <- lapply(names(all_families_ID), function(fam) {
+
+  ids <- all_families_ID[[fam]]
+
+  sub <- Hv6_final_matrix %>%
+    dplyr::filter(dplyr::if_any(dplyr::all_of(id_cols), ~ . %in% ids))
+
+  if (nrow(sub) > 0) {
+    sub$enzyme_family <- fam
+    sub$Category <- family_category[[fam]]
+    return(sub)
+  } else {
+    return(NULL)
+  }
+})
+
+malting_all <- dplyr::bind_rows(malting_rows)
+
+# ================================================================
+# FORCE SINGLE BARKE ID PER ROW (handle orthogroups correctly)
+# ================================================================
+
+primary_protein_col <- id_cols[1]
+
+# Extract raw values
+raw_ids <- malting_all[[primary_protein_col]]
+
+# Split comma-separated orthogroups and keep FIRST ID only
+malting_all$primary_barke_id <- vapply(
+  strsplit(raw_ids, ","),
+  function(x) trimws(x[1]),
+  character(1)
+)
+
+# Remove empty IDs if any
+malting_all <- malting_all[!is.na(malting_all$primary_barke_id) &
+                           malting_all$primary_barke_id != "", ]
+
+if (nrow(malting_all) == 0) {
+  stop("No matching proteins found for Hv6.")
+}
+
+# ================================================================
+# 3) Build RAW iBAQ matrix (NO Z-SCORE)
+# ================================================================
+iBAQ_cols <- grep("^iBAQ_norm_", names(malting_all), value = TRUE)
+
+malting_mat <- as.matrix(malting_all[, iBAQ_cols, drop = FALSE])
+mode(malting_mat) <- "numeric"
+
+# Replace non-finite values
+malting_mat[!is.finite(malting_mat)] <- NA
+
+# ================================================================
+# 4) Rename columns for plotting (FULLY EXPLICIT)
+# ================================================================
+colnames(malting_mat) <- colnames(malting_mat) %>%
+  gsub("^iBAQ_norm_", "", .) %>%
+  gsub("hs", " h", .) %>%
+  gsub("_", " ", .) %>%
+  gsub("barley",  "Barley",  ., ignore.case = TRUE) %>%
+  gsub("wheat",   "Wheat",   ., ignore.case = TRUE) %>%
+  gsub("rye",     "Rye",     ., ignore.case = TRUE) %>%
+  gsub("sorghum", "Sorghum", ., ignore.case = TRUE)
+
+# ================================================================
+# 5) Row names using curated barley gene symbols
+# ================================================================
+
+# Extract primary protein IDs (first Protein column)
+protein_ids <- malting_all$primary_barke_id
+
+# Map to curated barley names
+mapped_names <- barke_gene_map[protein_ids]
+
+# Fallback to original ID if missing
+mapped_names[is.na(mapped_names)] <- protein_ids[is.na(mapped_names)]
+
+# Ensure uniqueness for pheatmap
+rownames(malting_mat) <- make.unique(mapped_names)
+
+
+# ================================================================
+# 6) EXPLICIT FAMILY ORDER (FULL VECTOR, NO SHORTCUTS)
+# ================================================================
+family_names <- c(
+  # ---------------- Starch ----------------
+  "Alpha-amylase",
+  "Beta-amylase",
+  "Alpha-glucosidase",
+  "Isoamylase",
+  "Limit dextrinase",
+  "Alpha glucan phosphorylase",
+
+  # ---------------- Cell wall ----------------
+  "Cellulase",
+  "Lichenase",
+  "Beta-glucosidase",
+  "Arabinofuranosidase",
+  "Mannanase",
+  "Alpha-galactosidase",
+  "Polygalacturonase",
+  "Pectin esterase",
+
+  # ---------------- Protein ----------------
+  "serine endopeptidase",
+  "papain-like cysteine endopeptidase",
+  "aspartic endopeptidase",
+  "Aminopeptidase",
+  "tripeptidyl peptidase",
+  "dipeptidyl peptidase",
+  "Carboxypeptidase",
+
+  # ---------------- Lipid ----------------
+  "Lipoxygenase",
+  "allene oxide synthase",
+
+  # ---------------- Other ----------------
+  "acid phosphatase",
+  "Catalase",
+  "superoxide dismutase",
+  "polyphenol oxidase"
+)
+
+category_names <- c(
+  "Starch degradation",
+  "Cell wall degradation",
+  "Lipid degradation",
+  "Protein degradation",
+  "Other"
+)
+annotation_row <- data.frame(
+  Family   = malting_all$enzyme_family,
+  Category = malting_all$Category,
+  row.names = rownames(malting_mat)
+)
+
+
+
+annotation_row$Family   <- factor(annotation_row$Family, levels = family_names)
+annotation_row$Category <- factor(annotation_row$Category, levels = category_names)
+
+# ================================================================
+# 7) Row ordering
+# ================================================================
+row_order <- order(annotation_row$Category, annotation_row$Family)
+
+malting_mat   <- malting_mat[row_order, , drop = FALSE]
+annotation_row <- annotation_row[row_order, , drop = FALSE]
+
+# ================================================================
+# 8) Colors (FULLY EXPLICIT)
+# ================================================================
+palette <- colorRampPalette(RColorBrewer::brewer.pal(12, "Set3"))(length(family_names))
+family_colors <- setNames(palette, family_names)
+
+category_colors <- c(
+  "Starch degradation"    = "#E6C229",
+  "Cell wall degradation" = "#7FB685",
+  "Protein degradation"   = "#E07A5F",
+  "Lipid degradation"     = "#8DA0CB",
+  "Other"                 = "#BDBDBD"
+)
+
+ann_colors <- list(
+  Family   = family_colors,
+  Category = category_colors
+)
+
+heat_colors <- colorRampPalette(c("#FFFFFF", "#FEE8C8", "#D73000"))(150)
+
+# ================================================================
+# 9) Output directory
+# ================================================================
+out_dir <- "../../../R_export/Hv6/malting_enzymes"
+if (!dir.exists(out_dir)) {
+  dir.create(out_dir, recursive = TRUE)
+}
+
+# ================================================================
+# 10) Export RAW heatmaps (NO Z-SCORE)
+# ================================================================
+for (ext in c("jpeg", "svg", "pdf")) {
+
+  outfile <- file.path(out_dir, paste0("Hv6_allFamilies_RAW.", ext))
+  cat("Saving:", outfile, "\n")
+
+  if (ext == "jpeg") jpeg(outfile, width = 14, height = 12, units = "in", res = 350)
+  if (ext == "svg")  svg(outfile, width = 14, height = 12)
+  if (ext == "pdf")  pdf(outfile, width = 14, height = 12)
+
+  pheatmap::pheatmap(
+    malting_mat,
+    scale = "none",
+    color = heat_colors,
+    cluster_rows = FALSE,
+    cluster_cols = FALSE,
+    annotation_row = annotation_row,
+    annotation_colors = ann_colors,
+    show_rownames = TRUE,
+    show_colnames = TRUE,
+    legend = TRUE,
+    annotation_legend = TRUE,
+    fontsize_row = 5,
+    fontsize_col = 7,
+    main = "Hv6: Expression of enzyme families (raw normalized iBAQ)"
+  )
+
+  dev.off()
+}
+
+cat("✔ Hv6 RAW heatmaps saved in:", out_dir, "\n")
+
+## ============================================================
+## Hv6 — Species-specific malting enzyme heatmaps (HOG-anchored)
+## ============================================================
+
+library(dplyr)
+library(pheatmap)
+library(RColorBrewer)
+
+# ------------------------------------------------------------
+# 1. Load protein-resolved matrix
+# ------------------------------------------------------------
+Hv6 <- read.csv(
+  "../../../R_Data/Hv6/Hv6_final_matrix_no_mean.csv",
+  stringsAsFactors = FALSE
+)
+
+Hv6 <- Hv6 %>% filter(!grepl("^UNASSIGNED_", HOG))
+
+# ------------------------------------------------------------
+# 2. Rename iBAQ channels → timepoints
+# ------------------------------------------------------------
+timepoints <- c("0hs","12hs","24hs","36hs",
+                "48hs","60hs","72hs","84hs","96hs")
+
+rename_ibaq <- function(df, species){
+  old <- grep(paste0("^iBAQ_norm_ch[0-9]+_", species), names(df), value = TRUE)
+  new <- paste0("iBAQ_norm_", timepoints, "_", species)
+  names(df)[match(old, names(df))] <- new
+  df
+}
+
+for (sp in c("barley","wheat","rye","sorghum")) {
+  Hv6 <- rename_ibaq(Hv6, sp)
+}
+
+# ------------------------------------------------------------
+# 3. Identify malting HOGs FROM BARLEY ONLY
+# ------------------------------------------------------------
+barley_df <- Hv6 %>% filter(Species == "barley")
+
+malting_barley <- lapply(names(all_families_ID), function(fam){
+
+  ids <- all_families_ID[[fam]]
+  sub <- barley_df %>% filter(Protein_ID %in% ids)
+
+  if (nrow(sub) > 0) {
+    sub$enzyme_family <- fam
+    sub$Category <- family_category[[fam]]
+    sub
+  }
+})
+
+malting_barley <- bind_rows(malting_barley)
+
+if (nrow(malting_barley) == 0)
+  stop("No barley malting proteins detected.")
+
+# Core anchor
+malting_HOGs <- unique(malting_barley$HOG)
+
+cat("Malting HOGs identified:", length(malting_HOGs), "\n")
+
+# Map HOG → family/category
+hog_annotation <- malting_barley %>%
+  select(HOG, enzyme_family, Category) %>%
+  distinct()
+
+# ------------------------------------------------------------
+# 4. Function to build species heatmaps
+# ------------------------------------------------------------
+make_species_heatmap <- function(species_name){
+
+  cat("Processing:", species_name, "\n")
+
+  df <- Hv6 %>% filter(Species == species_name)
+
+  # Keep ONLY malting HOGs
+  malting <- df %>% filter(HOG %in% malting_HOGs)
+
+  if (nrow(malting) == 0) {
+    cat("⚠ No proteins for", species_name, "\n")
+    return(NULL)
+  }
+
+  # Attach family annotation
+  malting <- malting %>%
+    left_join(hog_annotation, by = "HOG")
+
+      # ----------------------------------------
+  # Build intensity matrix (RENAMED columns)
+  # ----------------------------------------
+
+  iBAQ_cols <- grep(
+    paste0("^iBAQ_norm_.*_", species_name, "$"),
+    names(malting),
+    value = TRUE
+  )
+
+  # Keep only true timepoint columns (exclude GO / annotation garbage)
+  iBAQ_cols <- iBAQ_cols[!grepl("GO|entry|TAIR|pname|gname", iBAQ_cols)]
+
+  # Sort by timepoint order
+  tp_order <- c("0hs","12hs","24hs","36hs","48hs","60hs","72hs","84hs","96hs")
+  iBAQ_cols <- iBAQ_cols[order(match(sub(".*norm_", "", sub(paste0("_", species_name), "", iBAQ_cols)), tp_order))]
+
+  if (length(iBAQ_cols) != 9) {
+    stop(paste0(
+      "Expected 9 iBAQ columns for ", species_name,
+      " but found ", length(iBAQ_cols), ":\n",
+      paste(iBAQ_cols, collapse = "\n")
+    ))
+  }
+
+  mat <- as.matrix(malting[, iBAQ_cols, drop = FALSE])
+  mode(mat) <- "numeric"
+  mat[!is.finite(mat)] <- NA
+
+
+
+
+  # ----------------------------------------
+  # Clean column names
+  # ----------------------------------------
+  colnames(mat) <- gsub("^iBAQ_norm_", "", colnames(mat))
+  colnames(mat) <- gsub("_", " ", colnames(mat))
+  colnames(mat) <- gsub("hs", " h", colnames(mat))
+
+  # ----------------------------------------
+  # Row names per species
+  # ----------------------------------------
+  if (species_name == "barley") {
+
+    ids <- malting$Protein_ID
+    gene_names <- barke_gene_map[ids]
+    gene_names[is.na(gene_names)] <- ids[is.na(gene_names)]
+
+    rownames(mat) <- make.unique(paste0(malting$HOG, " - ", gene_names))
+
+  } else if (species_name == "wheat") {
+
+    rownames(mat) <- make.unique(
+      paste0(malting$HOG, " - ", malting$wheatup_entry)
+    )
+
+  } else if (species_name == "sorghum") {
+
+    rownames(mat) <- make.unique(
+      paste0(malting$HOG, " - ", malting$sorghumup_entry)
+    )
+
+  } else if (species_name == "rye") {
+
+    rownames(mat) <- make.unique(malting$HOG)
+  }
+
+  # ----------------------------------------
+  # Row annotation
+  # ----------------------------------------
+  annotation_row <- data.frame(
+    Family   = malting$enzyme_family,
+    Category = malting$Category,
+    row.names = rownames(mat)
+  )
+
+  family_names <- names(family_category)
+  category_names <- unique(family_category)
+
+  annotation_row$Family   <- factor(annotation_row$Family, levels = family_names)
+  annotation_row$Category <- factor(annotation_row$Category, levels = category_names)
+
+  ord <- order(annotation_row$Category, annotation_row$Family)
+  mat <- mat[ord, , drop = FALSE]
+  annotation_row <- annotation_row[ord, , drop = FALSE]
+
+  # ----------------------------------------
+  # Colors
+  # ----------------------------------------
+  palette <- colorRampPalette(RColorBrewer::brewer.pal(12, "Set3"))(length(family_names))
+  family_colors <- setNames(palette, family_names)
+
+  category_colors <- c(
+    "Starch degradation"    = "#E6C229",
+    "Cell wall degradation" = "#7FB685",
+    "Protein degradation"   = "#E07A5F",
+    "Lipid degradation"     = "#8DA0CB",
+    "Other"                 = "#BDBDBD"
+  )
+
+  ann_colors <- list(Family = family_colors, Category = category_colors)
+  heat_colors <- colorRampPalette(c("#FFFFFF","#FEE8C8","#D73000"))(150)
+
+  # ----------------------------------------
+  # Save heatmaps
+  # ----------------------------------------
+  out_dir <- "../../../R_export/Hv6/malting_enzymes_species"
+  if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+  for (ext in c("jpeg","svg","pdf")) {
+
+    outfile <- file.path(out_dir,
+                         paste0("Hv6_", species_name, "_RAW_noMean.", ext))
+
+    if (ext == "jpeg") jpeg(outfile, 14, 12, units="in", res=350)
+    if (ext == "svg")  svg(outfile, 14, 12)
+    if (ext == "pdf")  pdf(outfile, 14, 12)
+
+    pheatmap(
+      mat,
+      scale = "none",
+      color = heat_colors,
+      cluster_rows = FALSE,
+      cluster_cols = FALSE,
+      annotation_row = annotation_row,
+      annotation_colors = ann_colors,
+      fontsize_row = 5,
+      fontsize_col = 7,
+      main = paste("Hv6:", species_name, "malting enzymes (HOG anchored)")
+    )
+
+    dev.off()
+  }
+
+  cat("✔ Done:", species_name, "\n")
+}
+
+# ------------------------------------------------------------
+# 5. Generate all species
+# ------------------------------------------------------------
+for (sp in c("barley","wheat","rye","sorghum")) {
+  make_species_heatmap(sp)
+}
+
+cat("✔ All species heatmaps generated\n")
+
+
+```
+
+
+#Unbiased analysis 
+We want to identify that part of the proteome that is either much more abundant or uniquely expressed in each species 
+
+
+```{r}
+
+# --- Load + rename channels to timepoints ---
+Hv6_final_matrix <- read.csv("../../../R_Data/Hv6/Hv6_final_matrix.csv",
+                             header = TRUE, stringsAsFactors = FALSE)
+
+timepoints <- c("0hs","0hs.1","12hs","24hs","36hs",
+                "48hs","60hs","72hs","84hs","96hs","96hs.1")
+
+rename_ibaq <- function(df, species){
+  old <- grep(paste0("^iBAQ_norm_ch[0-9]+_", species), names(df), value = TRUE)
+  tp_use <- timepoints[seq_len(min(length(old), length(timepoints)))]
+  new <- paste0("iBAQ_norm_", tp_use, "_", species)
+  names(df)[match(old, names(df))] <- new
+  df
+}
+for (sp in c("barley","wheat","rye","sorghum")) {
+  Hv6_final_matrix <- rename_ibaq(Hv6_final_matrix, sp)
+}
+
+# --- Parameters ---
+fc_threshold <- 10
+fc_threshold_hv <- 10
+min_tp       <- 11
+min_tp_hv       <- 11
+fc_threshold_w <- 10
+min_tp_w       <- 9
+fc_threshold_r <- 10
+min_tp_r      <- 9
+
+# --- Long format ---
+ibaq_long <- Hv6_final_matrix %>%
+  dplyr::select(HOG, starts_with("iBAQ_norm_")) %>%
+  pivot_longer(-HOG, names_to = "sample", values_to = "iBAQ") %>%
+  separate(sample, into = c("prefix","norm","timepoint","species"),
+           sep = "_", extra = "merge") %>%
+  mutate(
+    iBAQ = as.numeric(iBAQ),
+    iBAQ = ifelse(is.na(iBAQ) | iBAQ <= 0, 1, iBAQ),
+    timepoint = factor(timepoint, levels = timepoints)
+  )
+
+# --- Average per HOG × species × timepoint ---
+species_avg <- ibaq_long %>%
+  group_by(HOG, species, timepoint) %>%
+  summarise(iBAQ = mean(iBAQ, na.rm = TRUE), .groups = "drop")
+
+# --- Compare species at each timepoint ---
+comparison_df <- species_avg %>%
+  pivot_wider(names_from = species, values_from = iBAQ)
+
+for (sp in c("barley","wheat","rye","sorghum")) {
+  if (!sp %in% names(comparison_df)) comparison_df[[sp]] <- 1
+}
+
+comparison_df <- comparison_df %>%
+  rowwise() %>%
+  mutate(
+    barley_bias  = (barley  >= fc_threshold_hv * max(c(wheat, rye, sorghum))),
+    wheat_bias   = (wheat   >= fc_threshold_w * max(c(barley, rye, sorghum))),
+    rye_bias     = (rye     >= fc_threshold_r * max(c(barley, wheat, sorghum))),
+    sorghum_bias = (sorghum >= fc_threshold * max(c(barley, wheat, rye)))
+  ) %>%
+  ungroup()
+
+# --- Count biased timepoints per HOG ---
+species_bias_counts <- comparison_df %>%
+  group_by(HOG) %>%
+  summarise(
+    barley_count  = sum(barley_bias,  na.rm = TRUE),
+    wheat_count   = sum(wheat_bias,   na.rm = TRUE),
+    rye_count     = sum(rye_bias,     na.rm = TRUE),
+    sorghum_count = sum(sorghum_bias, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# --- Lists of biased OGs ---
+species_biased_lists <- list(
+  barley  = species_bias_counts %>% filter(barley_count  >= min_tp_hv) %>% pull(HOG),
+  wheat   = species_bias_counts %>% filter(wheat_count   >= min_tp_w) %>% pull(HOG),
+  rye     = species_bias_counts %>% filter(rye_count     >= min_tp_r) %>% pull(HOG),
+  sorghum = species_bias_counts %>% filter(sorghum_count >= min_tp) %>% pull(HOG)
+)
+biased_union <- unique(unlist(species_biased_lists))
+
+# --- Define the universe (all TAIR IDs across 4 columns) ---
+universe <- Hv6_final_matrix %>%
+  dplyr::select(TAIR_hv, TAIR_wheat, TAIR_rye, TAIR_sorghum) %>%
+  pivot_longer(everything(), values_to = "TAIR") %>%
+  filter(!is.na(TAIR)) %>%
+  mutate(TAIR = sub(";.*$", "", TAIR)) %>%
+  pull(TAIR) %>%
+  unique()
+
+# --- Helper to extract TAIR IDs ---
+extract_tair <- function(og_list, df) {
+  df %>%
+    filter(HOG %in% og_list) %>%
+    dplyr::select(TAIR_hv, TAIR_wheat, TAIR_rye, TAIR_sorghum) %>%
+    unlist() %>%
+    na.omit() %>%
+    sub(";.*$", "", .) %>%
+    unique()
+}
+barley_tair  <- extract_tair(species_biased_lists$barley,  Hv6_final_matrix)
+wheat_tair   <- extract_tair(species_biased_lists$wheat,   Hv6_final_matrix)
+rye_tair     <- extract_tair(species_biased_lists$rye,     Hv6_final_matrix)
+sorghum_tair <- extract_tair(species_biased_lists$sorghum, Hv6_final_matrix)
+
+# --- Run enrichment analysis ---
+enrich_barley  <- enrichGO(gene = barley_tair,  OrgDb = org.At.tair.db, keyType = "TAIR", ont = "ALL", universe = universe)
+enrich_barley_2 <- enrich_barley@result %>%
+  separate_rows(geneID, sep = "/")
+enrich_barley_anno <- merge(
+  enrich_barley_2,
+  Hv6_final_matrix,
+  by.x = "geneID",
+  by.y = "TAIR_hv",
+  all.x = TRUE
+)
+enrich_wheat   <- enrichGO(gene = wheat_tair,   OrgDb = org.At.tair.db, keyType = "TAIR", ont = "ALL", universe = universe)
+enrich_wheat_2 <- enrich_wheat@result %>%
+  separate_rows(geneID, sep = "/")
+enrich_wheat_anno <- merge(
+  enrich_wheat_2,
+  Hv6_final_matrix,
+  by.x = "geneID",
+  by.y = "TAIR_hv",
+  all.x = TRUE
+)
+enrich_rye     <- enrichGO(gene = rye_tair,     OrgDb = org.At.tair.db, keyType = "TAIR", ont = "ALL", universe = universe)
+enrich_rye_2 <- enrich_rye@result %>%
+  separate_rows(geneID, sep = "/")
+enrich_rye_anno <- merge(
+  enrich_rye_2,
+  Hv6_final_matrix,
+  by.x = "geneID",
+  by.y = "TAIR_hv",
+  all.x = TRUE
+)
+enrich_sorghum <- enrichGO(gene = sorghum_tair, OrgDb = org.At.tair.db, keyType = "TAIR", ont = "ALL", universe = universe)
+enrich_sorghum_2 <- enrich_sorghum@result %>%
+  separate_rows(geneID, sep = "/")
+enrich_sorghum_anno <- merge(
+  enrich_sorghum_2,
+  Hv6_final_matrix,
+  by.x = "geneID",
+  by.y = "TAIR_hv",
+  all.x = TRUE
+)
+
+#Generate a unique image with enrichments 
+enrich_barley_anno_sel <- enrich_barley@result[c(2,3,4,5), ]
+enrich_wheat_anno_sel <- enrich_wheat@result[c(2,3,4), ]
+enrich_rye_anno_sel <- enrich_rye@result[c(1,3,4), ]
+enrich_sorghum_anno_sel <- enrich_sorghum@result[c(10,17,24,26), ]
+
+# Create a named list of enrichment results
+enrich_list <- list(
+  "Barley" = enrich_barley_anno_sel,
+  "Wheat" = enrich_wheat_anno_sel,
+  "Rye" = enrich_rye_anno_sel,
+  "Sorghum" = enrich_sorghum_anno_sel
+)
+
+# Merge enrichment results into a compareClusterResult object
+merged <- merge_result(enrich_list)
+
+# Visualize results
+p <- dotplot(merged, showCategory = 18)
+
+# Print the plot (optional in some IDEs)
+print(p)
+
+# Save the dotplot
+ggsave("../../../R_export/Hv6/unbiased_species_biased/dotplot_biased.png",
+       plot = p, width = 9, height = 10, dpi = 300, scale=0.8)
+
+# Save the plot
+dev.copy(png, file = "../../../R_export/Hv4/unbiased/enrich_GO/dotplot_ance.png", width = 1500, height = 1500, res = 200)
+dev.off()
+dotplot(enrich_barley, showCategory = 15)
+dotplot(enrich_wheat, showCategory = 15)
+dotplot(enrich_rye, showCategory = 15)
+dotplot(enrich_sorghum, showCategory = 15)
+
+
+# --- Heatmap of all biased HOGs ---
+species <- c("barley","wheat","rye","sorghum")
+col_order <- unlist(lapply(species, function(sp) paste0("iBAQ_norm_", timepoints, "_", sp)))
+col_order <- col_order[col_order %in% names(Hv6_final_matrix)]
+
+hm_df <- Hv6_final_matrix[Hv6_final_matrix$HOG %in% biased_union,
+                          c("HOG", col_order), drop = FALSE]
+hm_mat <- as.matrix(hm_df[, col_order, drop = FALSE])
+rownames(hm_mat) <- hm_df$HOG
+hm_mat[is.na(hm_mat)] <- 1
+
+outdir <- "../../../R_export/Hv6/unbiased_species_biased"
+if (!dir.exists(outdir)) dir.create(outdir, recursive = TRUE)
+
+jpeg(file.path(outdir, "species_specific_proteomes.jpeg"),
+     width = 14, height = 10, units = "in", res = 350)
+
+pheatmap(
+  hm_mat,
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  scale = "row",
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  annotation_row = NULL,
+  annotation_col = NULL,
+  annotation_legend = FALSE,
+  legend = TRUE,
+  fontsize_col = 8,
+  color = colorRampPalette(c("blue2","white","firebrick3"))(50),
+  main = "Species-Biased Proteomes (z-score iBAQ)"
+)
+
+dev.off()
+
+
+
+```
+
+#Check beta-amy processing
+
+```{r}
+############################################################
+## HOG peptide extraction & heatmap generation (PDF version)
+############################################################
+
+suppressPackageStartupMessages({
+    library(data.table)
+    library(pheatmap)
+})
+
+## ============================================================
+## 0) USER INPUTS
+## ============================================================
+
+ortho_file <- "../../../R_Data/Hv6/Hv6_final_matrix.csv"
+pept_dir   <- "../../../R_import/Hv6/peptides"
+
+out_base   <- "../../../R_export/Hv6/HOG0005408_peptides"
+dir.create(out_base, recursive = TRUE, showWarnings = FALSE)
+
+target_hog <- "N0.HOG0005408"
+
+# Thresholds
+min_val  <- 0.1
+smooth_k <- 3
+thr_list <- list(
+    barley  = 4,
+    wheat   = 4,
+    rye     = 4,
+    sorghum = 4
+)
+
+# Species definitions
+species_info <- data.table(
+    Species  = c("barley",          "wheat",           "rye",              "sorghum"),
+    File     = c("peptides_Hv.txt", "peptides_Ta.txt", "peptides_Sc.txt",  "peptides_Sb.txt"),
+    BatchTag = c("Hv6_b1",          "Hv6_b2",          "Hv6_b3_rye",       "Hv6_b4_2"),
+    ProtCol  = c("Proteins_barley", "Proteins_wheat",  "Proteins_rye",     "Proteins_sorghum")
+)
+
+# Create species folders
+for (sp in species_info$Species) {
+    dir.create(file.path(out_base, sp), recursive = TRUE, showWarnings = FALSE)
+}
+
+## ============================================================
+## Helper functions
+## ============================================================
+
+edge_ma <- function(x, k = 3){
+    if (all(is.na(x))) return(x)
+    h <- floor(k / 2)
+    x_ext <- c(rep(x[1], h), x, rep(x[length(x)], h))
+    y <- stats::filter(x_ext, rep(1/k, k), sides = 2)
+    as.numeric(y[(h+1):(length(y)-h)])
+}
+
+smooth_matrix <- function(mat, k = 3) {
+    t(apply(mat, 1, edge_ma, k = k))
+}
+
+get_intensity_cols <- function(dt, batch_tag) {
+    patt <- paste0("^Reporter intensity corrected [0-9]+ ", batch_tag, "$")
+    grep(patt, names(dt), value = TRUE)
+}
+
+protein_in_proteins_column <- function(prot_id, proteins_vec) {
+    sapply(
+        proteins_vec,
+        function(x) {
+            ids <- trimws(unlist(strsplit(x, ",")))
+            prot_id %in% ids
+        }
+    )
+}
+
+sanitize_prot_id <- function(prot_id) {
+    gsub("[^A-Za-z0-9._-]", "_", prot_id)
+}
+
+## ============================================================
+## 1) Preprocess peptides (impute, correct outliers)
+## ============================================================
+
+pep_list      <- list()
+mask_list     <- list()
+int_cols_list <- list()
+
+for (i in seq_len(nrow(species_info))) {
+    
+    sp        <- species_info$Species[i]
+    pep_file  <- file.path(pept_dir, species_info$File[i])
+    batch_tag <- species_info$BatchTag[i]
+    
+    message("\n-----------------------------------------------------")
+    message("📌 Species: ", sp)
+    
+    if (!file.exists(pep_file)) {
+        message("⚠ Missing file, skipping...")
+        next
+    }
+    
+    dt <- fread(pep_file, sep = "\t", quote = "", header = TRUE)
+    dt_sp <- copy(dt)
+    
+    int_cols <- get_intensity_cols(dt_sp, batch_tag)
+    int_cols <- int_cols[1:9]
+    dt_sp[, (int_cols) := lapply(.SD, as.numeric), .SDcols = int_cols]
+    
+    mat <- as.matrix(dt_sp[, ..int_cols])
+    mode(mat) <- "numeric"
+    
+    thr <- thr_list[[sp]]
+    mask <- matrix(FALSE, nrow(mat), ncol(mat))
+    
+    for (r in seq_len(nrow(mat))) {
+        row_vals <- mat[r, ]
+        for (j in seq_along(row_vals)) {
+            val <- row_vals[j]
+            neigh_idx <- intersect(c(j-1, j+1), seq_along(row_vals))
+            neigh_vals <- row_vals[neigh_idx]
+            neigh_vals <- neigh_vals[is.finite(neigh_vals) & neigh_vals > 0]
+            if (!length(neigh_vals)) next
+            neigh_mean <- mean(neigh_vals)
+            if (is.na(val) || val < min_val) {
+                row_vals[j] <- neigh_mean
+                mask[r,j] <- TRUE
+            } else {
+                log2fc <- log2((val+1)/(neigh_mean+1))
+                if (abs(log2fc) > thr) {
+                    row_vals[j] <- neigh_mean
+                    mask[r,j] <- TRUE
+                }
+            }
+        }
+        mat[r,] <- row_vals
+    }
+    
+    for (j in seq_along(int_cols)) dt_sp[[int_cols[j]]] <- mat[, j]
+    pep_list[[sp]]      <- dt_sp
+    mask_list[[sp]]     <- mask
+    int_cols_list[[sp]] <- int_cols
+}
+
+species_done <- names(pep_list)
+
+## ============================================================
+## 2) Intra-species TSN
+## ============================================================
+
+for (sp in species_done) {
+    dt   <- pep_list[[sp]]
+    mask <- mask_list[[sp]]
+    int_cols <- int_cols_list[[sp]]
+    
+    mat <- as.matrix(dt[, ..int_cols])
+    col_sums <- sapply(seq_along(int_cols), function(j) {
+        sum(mat[!mask[,j], j], na.rm = TRUE)
+    })
+    
+    target <- median(col_sums[col_sums > 0])
+    factors <- target / col_sums
+    
+    for (j in seq_along(int_cols)) {
+        idx <- !mask[, j] & is.finite(mat[, j])
+        mat[idx, j] <- mat[idx, j] * factors[j]
+    }
+    
+    for (j in seq_along(int_cols)) dt[[int_cols[j]]] <- mat[, j]
+    pep_list[[sp]] <- dt
+}
+
+## ============================================================
+## 3) Inter-species median centering
+## ============================================================
+
+species_meds <- sapply(species_done, function(sp) {
+    dt <- pep_list[[sp]]
+    mask <- mask_list[[sp]]
+    int_cols <- int_cols_list[[sp]]
+    vals <- unlist(lapply(seq_along(int_cols), function(j) dt[[int_cols[j]]][!mask[,j]]))
+    median(vals)
+})
+
+grand_median <- median(species_meds)
+
+for (sp in species_done) {
+    dt   <- pep_list[[sp]]
+    mask <- mask_list[[sp]]
+    int_cols <- int_cols_list[[sp]]
+    factor <- grand_median / species_meds[sp]
+    for (j in seq_along(int_cols)) {
+        idx <- !mask[, j] & is.finite(dt[[int_cols[j]]])
+        dt[[int_cols[j]]][idx] <- dt[[int_cols[j]]][idx] * factor
+    }
+    pep_list[[sp]] <- dt
+}
+
+## ============================================================
+## 4) Smoothing + log2
+## ============================================================
+
+for (sp in species_done) {
+    dt <- pep_list[[sp]]
+    int_cols <- int_cols_list[[sp]]
+    mat <- as.matrix(dt[, ..int_cols])
+    mat <- log2(smooth_matrix(mat, k = smooth_k) + 1)
+    for (j in seq_along(int_cols)) dt[[int_cols[j]]] <- mat[, j]
+    pep_list[[sp]] <- dt
+}
+
+## ============================================================
+## 5) Load HOG table
+## ============================================================
+
+ortho <- fread(ortho_file)
+row_target <- ortho[HOG == target_hog]
+
+## ============================================================
+## 6) Extract peptides per protein, write tsv + PDF heatmap
+## ============================================================
+
+for (i in seq_len(nrow(species_info))) {
+    
+    sp       <- species_info$Species[i]
+    prot_col <- species_info$ProtCol[i]
+    
+    if (!(sp %in% species_done)) next
+    
+    prot_string <- as.character(row_target[[prot_col]])
+    if (is.na(prot_string) || prot_string == "") next
+    prot_vec <- trimws(unlist(strsplit(prot_string, ",")))
+    prot_vec <- prot_vec[nzchar(prot_vec)]
+    
+    dt_sp    <- pep_list[[sp]]
+    int_cols <- int_cols_list[[sp]]
+    
+    for (prot_id in prot_vec) {
+        
+        idx <- protein_in_proteins_column(prot_id, dt_sp$Proteins)
+        dt_prot <- dt_sp[idx]
+        if (nrow(dt_prot) == 0) next
+        
+        mat <- as.matrix(dt_prot[, ..int_cols])
+        rownames(mat) <- make.unique(dt_prot$Sequence)
+        colnames(mat) <- paste0("Ch", seq_len(ncol(mat)))
+        
+        out_dir <- file.path(out_base, sp, sanitize_prot_id(prot_id))
+        dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+        
+        fwrite(
+            cbind(dt_prot[, .(Sequence, Proteins)], as.data.table(mat)),
+            file.path(out_dir, "peptides_normalized.tsv"),
+            sep = "\t"
+        )
+        
+        # ---- PDF HEATMAP ----
+        row_sd <- apply(mat, 1, sd, na.rm = TRUE)
+        mat_hm <- mat[row_sd > 0, , drop = FALSE]
+        
+        if (nrow(mat_hm) >= 2) {
+            pdf(file.path(out_dir, "heatmap.pdf"), width = 12, height = 9)
+            pheatmap(
+                mat_hm,
+                scale="row",
+                cluster_rows=TRUE,
+                cluster_cols=FALSE,
+                main=paste("Peptide map –", sp, prot_id, "\nHOG:", target_hog),
+                show_rownames=TRUE,
+                fontsize=8
+            )
+            dev.off()
+        }
+    }
+}
+
+message("\n🎯 DONE (PDF version)!")
+
+```
+
+
+
+
+
+

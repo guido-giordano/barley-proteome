@@ -1,0 +1,604 @@
+---
+title: "DApipe_HvGerm_Exp6"
+author: "Guido Giordano"
+date: "2025-01-18"
+output: TMT to iBAQ pipeline
+---
+
+###Comments
+This pipeline converts TMT MaxQuant search results to iBAQ-style protein intensities. 
+It is structured to provide easy access to tables at each step and designed to be easily extended to new batches.
+Currently, it runs on a maximum of around 10 batches simultaneously, due to the memory-intensive handling of full datasets. This design was intentional during development, as it facilitates step-by-step inspection and debugging. 
+The pipeline could be improved by incorporating more memory-efficient strategies to reduce RAM usage. 
+Very important: it still needs to be carefully reviewed to ensure that no conceptual or technical errors are being made at any stage (e.g., correct MS2 vs MS3 selection, proper iBAQ calculation, etc.).
+
+
+#Load packages
+```{r}
+BiocManager::install("cleave")
+
+library(dplyr)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(ggbreak)
+library(cowplot)
+library(stringr)
+library(kableExtra)
+library(clusterProfiler)
+library(mice)
+library(reshape2)
+library(data.table)
+library(cleaver)
+
+```
+
+#Retrieve IBAQ values for protein groups  
+This scripts calculates IBAQ values for each protein group
+
+
+```{r}
+##Load all the files that are required for the pipeline ----
+# Batch 1
+msms_b1 <- read.table("../../../R_import/Hv6/ibaq_pipe/msms/msms_b1.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_msms"))
+peptides_b1 <- read.table("../../../R_import/Hv6/ibaq_pipe/peptides/peptides_b1.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_pep"))
+evidence_b1_OF <- read.table("../../../R_import/Hv6/ibaq_pipe/evidence/evidence2_b1.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_ev"))
+pG_b1 <- read.table("../../../R_import/Hv6/ibaq_pipe/pG/pGroups_Hv6_b1_FDR.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_pG"))
+
+# Batch 2
+msms_b2 <- read.table("../../../R_import/Hv6/ibaq_pipe/msms/msms_b2.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_msms"))
+peptides_b2 <- read.table("../../../R_import/Hv6/ibaq_pipe/peptides/peptides_b2.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_pep"))
+evidence_b2_OF <- read.table("../../../R_import/Hv6/ibaq_pipe/evidence/evidence2_b2.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_ev"))
+pG_b2 <- read.table("../../../R_import/Hv6/ibaq_pipe/pG/pGroups_Hv6_b2_FDR.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_pG"))
+
+# Batch 3
+msms_b3 <- read.table("../../../R_import/Hv6/ibaq_pipe/msms/msms_b3.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_msms"))
+peptides_b3 <- read.table("../../../R_import/Hv6/ibaq_pipe/peptides/peptides_b3.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_pep"))
+evidence_b3_OF <- read.table("../../../R_import/Hv6/ibaq_pipe/evidence/evidence2_b3.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_ev"))
+pG_b3 <- read.table("../../../R_import/Hv6/ibaq_pipe/pG/pGroups_Hv6_b3_FDR.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_pG"))
+
+# Batch 4
+msms_b4 <- read.table("../../../R_import/Hv6/ibaq_pipe/msms/msms_b4.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_msms"))
+peptides_b4 <- read.table("../../../R_import/Hv6/ibaq_pipe/peptides/peptides_b4.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_pep"))
+evidence_b4_OF <- read.table("../../../R_import/Hv6/ibaq_pipe/evidence/evidence2_b4.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_ev"))
+pG_b4 <- read.table("../../../R_import/Hv6/ibaq_pipe/pG/pGroups_Hv6_b4_FDR.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE) %>% rename_with(~paste0(., "_pG"))
+
+```
+
+#From MS3 to MS1 
+This chunk calculates converts MS3 values to MS1
+
+```{r}
+#Link each precursor intensity (from evidence.txt) to its corresponding PSM from the msms.txt file
+# Batch 1
+evi_msms_merged_b1 <- merge(evidence_b1_OF, msms_b1, 
+                         by.x = "Best.MS.MS_ev", 
+                         by.y = "id_msms", 
+                         all.x = TRUE,  
+                         all.y = FALSE) 
+# Batch 2
+evi_msms_merged_b2 <- merge(evidence_b2_OF, msms_b2, 
+                         by.x = "Best.MS.MS_ev", 
+                         by.y = "id_msms", 
+                         all.x = TRUE,  
+                         all.y = FALSE) 
+
+# Batch 3
+evi_msms_merged_b3 <- merge(evidence_b3_OF, msms_b3, 
+                         by.x = "Best.MS.MS_ev", 
+                         by.y = "id_msms", 
+                         all.x = TRUE,  
+                         all.y = FALSE) 
+
+# Batch 4
+evi_msms_merged_b4 <- merge(evidence_b4_OF, msms_b4, 
+                         by.x = "Best.MS.MS_ev", 
+                         by.y = "id_msms", 
+                         all.x = TRUE,  
+                         all.y = FALSE) 
+
+##Calculate TMT intensity ratios and redistribute MS1 precursor intensity across channels ----
+#Get the intensity cols ----
+# Batch 1-4
+intensity_cols_b2 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev$", colnames(evi_msms_merged_b2), value = TRUE)
+intensity_cols_b1 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev$", 
+colnames(evi_msms_merged_b1), value = TRUE)
+intensity_cols_b4 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev$", colnames(evi_msms_merged_b4), value = TRUE)
+intensity_cols_b3 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev$", colnames(evi_msms_merged_b3), value = TRUE)
+
+#Compute total TMT intensity per precursor (sum of selected channels) ----
+#b1
+evi_msms_merged_b1 <- evi_msms_merged_b1 %>%
+  mutate(Total_Reporter_Intensity = rowSums(select(., all_of(intensity_cols_b1)), na.rm = TRUE))
+
+evi_msms_merged_b1 <- evi_msms_merged_b1 %>%
+  mutate(across(all_of(intensity_cols_b1), ~ . / Total_Reporter_Intensity, .names = "{.col}_ratio"))
+
+# Batch 2
+evi_msms_merged_b2 <- evi_msms_merged_b2 %>%
+  mutate(Total_Reporter_Intensity = rowSums(select(., all_of(intensity_cols_b2)), na.rm = TRUE))
+
+evi_msms_merged_b2 <- evi_msms_merged_b2 %>%
+  mutate(across(all_of(intensity_cols_b2), ~ . / Total_Reporter_Intensity, .names = "{.col}_ratio"))
+
+# Batch 3
+evi_msms_merged_b3 <- evi_msms_merged_b3 %>%
+  mutate(Total_Reporter_Intensity = rowSums(select(., all_of(intensity_cols_b3)), na.rm = TRUE))
+
+evi_msms_merged_b3 <- evi_msms_merged_b3 %>%
+  mutate(across(all_of(intensity_cols_b3), ~ . / Total_Reporter_Intensity, .names = "{.col}_ratio"))
+
+# Batch 4
+evi_msms_merged_b4 <- evi_msms_merged_b4 %>%
+  mutate(Total_Reporter_Intensity = rowSums(select(., all_of(intensity_cols_b4)), na.rm = TRUE))
+
+evi_msms_merged_b4 <- evi_msms_merged_b4 %>%
+  mutate(across(all_of(intensity_cols_b4), ~ . / Total_Reporter_Intensity, .names = "{.col}_ratio"))
+
+
+# Compute TMT-corrected intensities by multiplying the ratio with MS1 precursor intensity ----
+#b1
+ratio_cols_b1 <- grep("_ratio$", colnames(evi_msms_merged_b1), value = TRUE)
+evi_msms_merged_b1 <- evi_msms_merged_b1 %>%
+  mutate(Sum_TMT_Ratios = rowSums(select(., all_of(ratio_cols_b1)), na.rm = TRUE)) # Check that sum is 1
+evi_msms_merged_b1 <- evi_msms_merged_b1 %>%
+  mutate(across(ends_with("_ratio"), ~ . * Precursor.Intensity_msms, .names = "{.col}_TMT_corrected"))
+
+
+# b2
+ratio_cols_b2 <- grep("_ratio$", colnames(evi_msms_merged_b2), value = TRUE)
+evi_msms_merged_b2 <- evi_msms_merged_b2 %>%
+  mutate(Sum_TMT_Ratios = rowSums(select(., all_of(ratio_cols_b2)), na.rm = TRUE)) %>%
+  mutate(across(ends_with("_ratio"), ~ . * Precursor.Intensity_msms, .names = "{.col}_TMT_corrected"))
+
+# Batch 3
+ratio_cols_b3 <- grep("_ratio$", colnames(evi_msms_merged_b3), value = TRUE)
+evi_msms_merged_b3 <- evi_msms_merged_b3 %>%
+  mutate(Sum_TMT_Ratios = rowSums(select(., all_of(ratio_cols_b3)), na.rm = TRUE)) %>%
+  mutate(across(ends_with("_ratio"), ~ . * Precursor.Intensity_msms, .names = "{.col}_TMT_corrected"))
+
+# Batch 4
+ratio_cols_b4 <- grep("_ratio$", colnames(evi_msms_merged_b4), value = TRUE)
+evi_msms_merged_b4 <- evi_msms_merged_b4 %>%
+  mutate(Sum_TMT_Ratios = rowSums(select(., all_of(ratio_cols_b4)), na.rm = TRUE)) %>%
+  mutate(across(ends_with("_ratio"), ~ . * Precursor.Intensity_msms, .names = "{.col}_TMT_corrected"))
+
+#For all peptides sum up all precursor MS1 intensities per channel ----- 
+#b1
+#Merge peps
+peptides_merged_b1 <- merge(peptides_b1, evi_msms_merged_b1, 
+                         by.x = "id_pep", by.y = "Peptide.ID_ev",
+                         all.x = FALSE,  # Keep only peptides with evidence
+                         all.y = TRUE)   # Keep all evidence-linked rows
+# Sum MS1 intensities per peptide
+tmt_corrected_cols_b1 <- grep("_TMT_corrected$", colnames(peptides_merged_b1), value = TRUE)
+# Sum TMT-corrected intensities per peptide
+setDT(peptides_merged_b1) #switch it to data table to smooth the summing process 
+peptides_summed_b1 <- peptides_merged_b1[, lapply(.SD, sum, na.rm = TRUE), by = id_pep, .SDcols = tmt_corrected_cols_b1]
+#Get back all the info
+peptides_merged_2_b1 <- peptides_merged_b1 %>%
+  select(-c(350:360))
+peptides_final_b1 <- merge(peptides_summed_b1,peptides_merged_2_b1, by="id_pep", all.x=TRUE, all.y=FALSE)
+
+# Batch 2
+# Merge peps
+peptides_merged_b2 <- merge(peptides_b2, evi_msms_merged_b2, 
+                         by.x = "id_pep", by.y = "Peptide.ID_ev",
+                         all.x = FALSE,  
+                         all.y = TRUE)   
+
+# Sum MS1 intensities per peptide
+tmt_corrected_cols_b2 <- grep("_TMT_corrected$", colnames(peptides_merged_b2), value = TRUE)
+
+# Sum TMT-corrected intensities per peptide
+setDT(peptides_merged_b2)  
+peptides_summed_b2 <- peptides_merged_b2[, lapply(.SD, sum, na.rm = TRUE), by = id_pep, .SDcols = tmt_corrected_cols_b2]
+
+# Get back all the info
+peptides_merged_2_b2 <- peptides_merged_b2 %>%
+  select(-c(350:360))
+
+peptides_final_b2 <- merge(peptides_merged_2_b2, peptides_summed_b2, by="id_pep", all.x=FALSE, all.y=TRUE)
+
+# Batch 3
+peptides_merged_b3 <- merge(peptides_b3, evi_msms_merged_b3, 
+                         by.x = "id_pep", by.y = "Peptide.ID_ev",
+                         all.x = FALSE,  
+                         all.y = TRUE)   
+
+tmt_corrected_cols_b3 <- grep("_TMT_corrected$", colnames(peptides_merged_b3), value = TRUE)
+
+setDT(peptides_merged_b3)  
+peptides_summed_b3 <- peptides_merged_b3[, lapply(.SD, sum, na.rm = TRUE), by = id_pep, .SDcols = tmt_corrected_cols_b3]
+
+peptides_merged_2_b3 <- peptides_merged_b3 %>%
+  select(-c(350:360))
+
+peptides_final_b3 <- merge(peptides_merged_2_b3, peptides_summed_b3, by="id_pep", all.x=FALSE, all.y=TRUE)
+
+# Batch 4
+peptides_merged_b4 <- merge(peptides_b4, evi_msms_merged_b4, 
+                         by.x = "id_pep", by.y = "Peptide.ID_ev",
+                         all.x = FALSE,  
+                         all.y = TRUE)   
+
+tmt_corrected_cols_b4 <- grep("_TMT_corrected$", colnames(peptides_merged_b4), value = TRUE)
+
+setDT(peptides_merged_b4)  
+peptides_summed_b4 <- peptides_merged_b4[, lapply(.SD, sum, na.rm = TRUE), by = id_pep, .SDcols = tmt_corrected_cols_b4]
+
+peptides_merged_2_b4 <- peptides_merged_b4 %>%
+  select(-c(350:360))
+
+peptides_final_b4 <- merge(peptides_merged_2_b4, peptides_summed_b4, by="id_pep", all.x=FALSE, all.y=TRUE)
+
+##Retain only summed peptides ----
+peptides_final_b1 <- peptides_final_b1[!duplicated(peptides_final_b1$id_pep), ]
+peptides_final_b2 <- peptides_final_b2[!duplicated(peptides_final_b2$id_pep), ]
+peptides_final_b3 <- peptides_final_b3[!duplicated(peptides_final_b3$id_pep), ]
+peptides_final_b4 <- peptides_final_b4[!duplicated(peptides_final_b4$id_pep), ]
+
+
+##Get protein groups values ----
+#b1
+#Convert to data table format 
+setDT(peptides_final_b1)
+setDT(pG_b1)
+
+# Identify the intensity columns that need to be summed 
+tmt_corrected_cols_b1 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev_ratio_TMT_corrected$", 
+                           colnames(peptides_final_b1), value = TRUE)
+
+# Expand 'Evidence.IDs_pG' column so each peptide ID gets its own row
+pG_long_b1 <- pG_b1[, .(id_ev = unlist(tstrsplit(Evidence.IDs_pG, ";", fixed = TRUE))), 
+                      by = Protein.IDs_pG]
+# Convert `id_ev` to numeric, handling potential conversion errors
+pG_long_b1[, id_ev := as.integer(id_ev)]
+
+# Merge expanded protein-peptide mapping with peptide intensity values
+pG_merged_b1 <- merge(pG_long_b1, 
+                   peptides_final_b1[, c("id_ev", tmt_corrected_cols_b1), with = FALSE], 
+                   by = "id_ev", 
+                   all.x = TRUE)  # Keep all protein-peptide relationships, even if some peptides lack intensities
+
+# Sum peptide intensities for each protein group
+pG_summed_b1 <- pG_merged_b1[, lapply(.SD, sum, na.rm = TRUE), 
+                        by = Protein.IDs_pG, 
+                        .SDcols = tmt_corrected_cols_b1]
+# Rename all columns except 'Protein.IDs_pG' by appending "_summed"
+setnames(pG_summed_b1, old = tmt_corrected_cols_b1, new = paste0(tmt_corrected_cols_b1, "_summed"))
+
+# Merge summed intensities back into the original protein group file
+pG_final_b1 <- merge(pG_b1, pG_summed_b1, by = "Protein.IDs_pG", all.x = TRUE)
+pG_final_b1
+#Save file
+write.csv(pG_final_b1, "../../../R_Data/Hv6/pGroups_MS1/pg_b1_MS1.csv", row.names = FALSE)
+
+# Batch 2
+setDT(peptides_final_b2)
+setDT(pG_b2)
+
+tmt_corrected_cols_b2 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev_ratio_TMT_corrected$", 
+                           colnames(peptides_final_b2), value = TRUE)
+
+pG_long_b2 <- pG_b2[, .(id_ev = unlist(tstrsplit(Evidence.IDs_pG, ";", fixed = TRUE))), 
+                      by = Protein.IDs_pG]
+pG_long_b2[, id_ev := as.integer(id_ev)]
+
+pG_merged_b2 <- merge(pG_long_b2, 
+                   peptides_final_b2[, c("id_ev", tmt_corrected_cols_b2), with = FALSE], 
+                   by = "id_ev", 
+                   all.x = TRUE)
+
+pG_summed_b2 <- pG_merged_b2[, lapply(.SD, sum, na.rm = TRUE), 
+                        by = Protein.IDs_pG, 
+                        .SDcols = tmt_corrected_cols_b2]
+
+setnames(pG_summed_b2, old = tmt_corrected_cols_b2, new = paste0(tmt_corrected_cols_b2, "_summed"))
+
+pG_final_b2 <- merge(pG_b2, pG_summed_b2, by = "Protein.IDs_pG", all.x = TRUE)
+
+write.csv(pG_final_b2, "../../../R_Data/Hv6/pGroups_MS1/pg_b2_MS1.csv", row.names = FALSE)
+
+# Batch 3
+setDT(peptides_final_b3)
+setDT(pG_b3)
+
+tmt_corrected_cols_b3 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev_ratio_TMT_corrected$", 
+                           colnames(peptides_final_b3), value = TRUE)
+
+pG_long_b3 <- pG_b3[, .(id_ev = unlist(tstrsplit(Evidence.IDs_pG, ";", fixed = TRUE))), 
+                      by = Protein.IDs_pG]
+pG_long_b3[, id_ev := as.integer(id_ev)]
+
+pG_merged_b3 <- merge(pG_long_b3, 
+                   peptides_final_b3[, c("id_ev", tmt_corrected_cols_b3), with = FALSE], 
+                   by = "id_ev", 
+                   all.x = TRUE)
+
+pG_summed_b3 <- pG_merged_b3[, lapply(.SD, sum, na.rm = TRUE), 
+                        by = Protein.IDs_pG, 
+                        .SDcols = tmt_corrected_cols_b3]
+
+setnames(pG_summed_b3, old = tmt_corrected_cols_b3, new = paste0(tmt_corrected_cols_b3, "_summed"))
+
+pG_final_b3 <- merge(pG_b3, pG_summed_b3, by = "Protein.IDs_pG", all.x = TRUE)
+
+write.csv(pG_final_b3, "../../../R_Data/Hv6/pGroups_MS1/pg_b3_MS1.csv", row.names = FALSE)
+
+# Batch 4
+setDT(peptides_final_b4)
+setDT(pG_b4)
+
+tmt_corrected_cols_b4 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev_ratio_TMT_corrected$", 
+                           colnames(peptides_final_b4), value = TRUE)
+
+pG_long_b4 <- pG_b4[, .(id_ev = unlist(tstrsplit(Evidence.IDs_pG, ";", fixed = TRUE))), 
+                      by = Protein.IDs_pG]
+pG_long_b4[, id_ev := as.integer(id_ev)]
+
+pG_merged_b4 <- merge(pG_long_b4, 
+                   peptides_final_b4[, c("id_ev", tmt_corrected_cols_b4), with = FALSE], 
+                   by = "id_ev", 
+                   all.x = TRUE)
+
+pG_summed_b4 <- pG_merged_b4[, lapply(.SD, sum, na.rm = TRUE), 
+                        by = Protein.IDs_pG, 
+                        .SDcols = tmt_corrected_cols_b4]
+
+setnames(pG_summed_b4, old = tmt_corrected_cols_b4, new = paste0(tmt_corrected_cols_b4, "_summed"))
+
+pG_final_b4 <- merge(pG_b4, pG_summed_b4, by = "Protein.IDs_pG", all.x = TRUE)
+
+write.csv(pG_final_b4, "../../../R_Data/Hv6/pGroups_MS1/pg_b4_MS1.csv", row.names = FALSE)
+
+```
+
+###Convert MS1 intensities to iBAQ intensities ----
+Not for every batch (barley variety) I had a specific search space
+
+```{r}
+# Load all 4 batches from MS1 files (one by one, no loop or function)
+pG_final_b1 <- read.csv("../../../R_Data/Hv6/pGroups_MS1/pg_b1_MS1.csv", stringsAsFactors = FALSE)
+pG_final_b2 <- read.csv("../../../R_Data/Hv6/pGroups_MS1/pg_b2_MS1.csv", stringsAsFactors = FALSE)
+pG_final_b3 <- read.csv("../../../R_Data/Hv6/pGroups_MS1/pg_b3_MS1.csv", stringsAsFactors = FALSE)
+pG_final_b4 <- read.csv("../../../R_Data/Hv6/pGroups_MS1/pg_b4_MS1.csv", stringsAsFactors = FALSE)
+
+##Get tryptic peps per protein ID per fasta file
+barley_fasta <- readAAStringSet("../../../R_import/Hv6/ibaq_pipe/fasta/Barke.protein.fa")
+rye_fasta <- readAAStringSet("../../../R_import/Hv6/ibaq_pipe/fasta/SECALE.CEREALE.Lo7V3.pgsb.r2.Feb2025_all.aa.fa")
+sorghum_fasta <- readAAStringSet("../../../R_import/Hv6/ibaq_pipe/fasta/Sbicolor_730_v5.1.protein.fa")
+wheat_fasta <- readAAStringSet("../../../R_import/Hv6/ibaq_pipe/fasta/wheat_HD6172.Protein.fa")
+
+# Cleave and extract peptides ----
+extract_peptides <- function(fasta) {
+  peps <- cleave(fasta)
+  peps_list <- peps@unlistData
+  data.table(
+    Protein_ID = rep(names(fasta), lengths(peps)),
+    Peptide_Seq = as.character(peps_list),
+    Peptide_Length = nchar(as.character(peps_list))
+  )[Peptide_Length >= 7 & Peptide_Length <= 40]
+}
+
+# Get tryptic peptides for each species ----
+data_barley  <- extract_peptides(barley_fasta)
+data_rye     <- extract_peptides(rye_fasta)
+data_sorghum <- extract_peptides(sorghum_fasta)
+data_wheat   <- extract_peptides(wheat_fasta) 
+  
+
+# Count peptides per protein and return as data.table
+count_peptides <- function(data, species_code) {
+  peptide_counts <- aggregate(Peptide_Seq ~ Protein_ID, data = data, FUN = length)
+  colnames(peptide_counts) <- c("Protein_ID", "Num_Peptides")
+  
+  # Write to CSV
+  out_path <- paste0("../../../R_Data/Hv6/theor_tryp_pep/theor_tryp_pep_", species_code, ".csv")
+  write.csv(peptide_counts, out_path, row.names = FALSE)
+  
+  # Return as data.table
+  as.data.table(peptide_counts)
+}
+
+# Apply and store results ----
+peptide_counts_BAR <- count_peptides(data_barley, "BAR")
+
+peptide_counts_WHE <- count_peptides(data_wheat, "WHE")
+setDT(peptide_counts_WHE)
+peptide_counts_WHE[, Protein_ID := sub("\t.*", "", Protein_ID)]
+
+peptide_counts_RYE <- count_peptides(data_rye, "RYE")
+
+peptide_counts_SOR <- count_peptides(data_sorghum, "SOR")
+setDT(peptide_counts_SOR)
+peptide_counts_SOR[, Protein_ID := sub(" .*", "", Protein_ID)]
+
+
+
+## BATCH 1 (BARLEY) ----
+setDT(pG_final_b1)
+pG_final_b1[, Protein.IDs_pG := sapply(strsplit(Protein.IDs_pG, ";"), `[`, 1)]
+pG_final_b1 <- merge(pG_final_b1, peptide_counts_BAR,
+                     by.x = "Protein.IDs_pG",
+                     by.y = "Protein_ID",
+                     all.x = TRUE)
+
+intensity_cols_b1 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev_ratio_TMT_corrected_summed$", 
+                          colnames(pG_final_b1), value = TRUE)
+
+for (col in intensity_cols_b1) {
+  new_col_name <- paste0(col, "_iBAQ")
+  pG_final_b1[, (new_col_name) := get(col) / Num_Peptides]
+}
+
+write.csv(pG_final_b1, "../../../R_Data/Hv6/pGroups_IBAQ/pG_BAR_b1.csv", row.names = FALSE)
+
+### BATCH 2 (WHEAT) ----
+setDT(pG_final_b2)
+
+pG_final_b2[, Protein.IDs_pG := sapply(strsplit(Protein.IDs_pG, "\t"), `[`, 1)]
+pG_final_b2 <- merge(pG_final_b2, peptide_counts_WHE,
+                     by.x = "Protein.IDs_pG",
+                     by.y = "Protein_ID",
+                     all.x = TRUE)
+
+intensity_cols_b2 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev_ratio_TMT_corrected_summed$",
+                          colnames(pG_final_b2), value = TRUE)
+
+for (col in intensity_cols_b2) {
+  new_col_name <- paste0(col, "_iBAQ")
+  pG_final_b2[, (new_col_name) := get(col) / Num_Peptides]
+}
+
+write.csv(pG_final_b2, "../../../R_Data/Hv6/pGroups_IBAQ/pG_WHE_b2.csv", row.names = FALSE)
+
+
+### BATCH 3 (RYE) ----
+setDT(pG_final_b3)
+pG_final_b3[, Protein.IDs_pG := sapply(strsplit(Protein.IDs_pG, ";"), `[`, 1)]
+pG_final_b3 <- merge(pG_final_b3, peptide_counts_RYE,
+                     by.x = "Protein.IDs_pG",
+                     by.y = "Protein_ID",
+                     all.x = TRUE)
+
+intensity_cols_b3 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev_ratio_TMT_corrected_summed$",
+                          colnames(pG_final_b3), value = TRUE)
+
+for (col in intensity_cols_b3) {
+  new_col_name <- paste0(col, "_iBAQ")
+  pG_final_b3[, (new_col_name) := get(col) / Num_Peptides]
+}
+
+write.csv(pG_final_b3, "../../../R_Data/Hv6/pGroups_IBAQ/pG_RYE_b3.csv", row.names = FALSE)
+
+
+### BATCH 4 (SORGHUM) ----
+setDT(pG_final_b4)
+pG_final_b4[, Protein.IDs_pG := sapply(strsplit(Protein.IDs_pG, ";"), `[`, 1)]
+pG_final_b4 <- merge(pG_final_b4, peptide_counts_SOR,
+                     by.x = "Protein.IDs_pG",
+                     by.y = "Protein_ID",
+                     all.x = TRUE)
+
+intensity_cols_b4 <- grep("Reporter\\.intensity\\.corrected\\.(1|2|3|4|5|6|7|8|9|10|11)_ev_ratio_TMT_corrected_summed$",
+                          colnames(pG_final_b4), value = TRUE)
+
+for (col in intensity_cols_b4) {
+  new_col_name <- paste0(col, "_iBAQ")
+  pG_final_b4[, (new_col_name) := get(col) / Num_Peptides]
+}
+
+write.csv(pG_final_b4, "../../../R_Data/Hv6/pGroups_IBAQ/pG_SOR_b4.csv", row.names = FALSE)
+```
+
+##Quality check on ibaq values 
+- with this script I check if the conversion from TMT to ibaq has been succesfull 
+
+```{r}
+# --- Load files ---
+# Define the directory where the files are stored
+data_dir <- "../../../R_Data/Hv6/pGroups_IBAQ/"
+
+# Get a list of all pG_*.csv files in the directory
+file_list <- list.files(path = data_dir, pattern = "^pG_.*\\.csv$", full.names = TRUE)
+
+# Load each file as a separate data.table with a unique variable name
+for (file in file_list) {
+  # Extract the variable name from the file name
+  var_name <- gsub("^.*/pG_(.*)\\.csv$", "pG_\\1", file)
+  
+  # Read the file into a variable
+  assign(var_name, data.table::fread(file), envir = .GlobalEnv)
+}
+
+# --- Remove Contaminants, Reverse, or OIBS ---
+for (var_name in ls(pattern = "^pG_")) {
+  df <- get(var_name)
+  
+  if (all(c("Reverse", "Potential.contaminant", "Only.identified.by.site") %in% colnames(df))) {
+    df <- df[Reverse != "+" & Potential.contaminant != "+" & Only.identified.by.site != "+", ]
+  } else if ("Reverse" %in% colnames(df)) {
+    df <- df[Reverse != "+", ]
+  }
+  
+  assign(var_name, df, envir = .GlobalEnv)
+}
+
+# --- Log2 Transformation of iBAQ Columns ---
+for (var_name in ls(pattern = "^pG_")) {
+  df <- get(var_name)
+  
+  ibaq_cols <- grep("iBAQ", colnames(df), value = TRUE)
+  
+  df[, (ibaq_cols) := lapply(.SD, function(x) {
+    x <- as.numeric(as.character(x))
+    x[is.na(x)] <- 0
+    log2(x + 1)
+  }), .SDcols = ibaq_cols]
+  
+  assign(var_name, df, envir = .GlobalEnv)
+}
+
+# --- Median Centering of iBAQ Columns ---
+for (var_name in ls(pattern = "^pG_")) {
+  df <- get(var_name)
+  
+  ibaq_cols <- grep("iBAQ", colnames(df), value = TRUE)
+  
+  df[, (ibaq_cols) := lapply(.SD, function(x) x - median(x, na.rm = TRUE)), .SDcols = ibaq_cols]
+  
+  assign(var_name, df, envir = .GlobalEnv)
+}
+
+# --- Plotting ---
+output_dir <- "../../../R_Data/Hv6/iBAQ_Distribution_Plots/"
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+for (var_name in ls(pattern = "^pG_")) {
+  df <- get(var_name)
+  
+  if (nrow(df) == 0) {
+    message("Skipping ", var_name, " - dataset is empty.")
+    next
+  }
+  
+  ibaq_cols <- grep("_summed_iBAQ$", colnames(df), value = TRUE)
+  
+  if (length(ibaq_cols) == 0) {
+    message("Skipping ", var_name, " - no iBAQ columns found.")
+    next
+  }
+  
+  plots <- lapply(seq_along(ibaq_cols), function(i) {
+    ggplot2::ggplot(df, ggplot2::aes_string(x = ibaq_cols[i])) +
+      ggplot2::geom_histogram(binwidth = 0.7, fill = "#105CB6", color = "black") +
+      ggplot2::labs(
+        title = paste("Batch", i),
+        x = "Reporter Intensity (iBAQ)",
+        y = "Frequency"
+      ) +
+      ggplot2::theme_classic() +
+      ggplot2::xlim(-25, 15) +
+      ggplot2::theme(
+        plot.title = ggplot2::element_text(size = 12, hjust = 0.5),
+        axis.title = ggplot2::element_text(size = 10),
+        axis.text = ggplot2::element_text(size = 10)
+      )
+  })
+  
+  if (length(plots) > 0) {
+    main_title <- grid::textGrob(var_name, gp = grid::gpar(fontsize = 16, fontface = "bold"))
+    plot_grid <- gridExtra::arrangeGrob(grobs = plots, ncol = 3, top = main_title)
+    
+    ggplot2::ggsave(
+      filename = paste0(output_dir, var_name, "_iBAQ_distribution.png"),
+      plot = plot_grid,
+      width = 12,
+      height = 9
+    )
+    
+    message("Saved plot for ", var_name)
+  }
+}
+```

@@ -1,0 +1,955 @@
+---
+title: "DApipe_HvGerm_Exp2TD"
+author: "Guido Giordano"
+date: "2025-09-08"
+output: html_document
+---
+#This is the pipeline for data analysis for barley germination experiment 2TD
+
+#Load packages
+```{r}
+BiocManager::install("cleave")
+BiocManager::install("Mfuzz")
+BiocManager::install("Biobase")
+BiocManager::install("org.At.tair.db")
+BiocManager::install("clusterProfiler")
+
+library(AnnotationDbi)
+library(org.At.tair.db)
+library(clusterProfiler)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(ggbreak)
+library(cowplot)
+library(stringr)
+library(kableExtra)
+library(clusterProfiler)
+library(mice)
+library(reshape2)
+library(data.table)
+library(cleaver)
+library(Mfuzz)
+library(Biobase)
+library(textshape)
+library(tidyr)
+library(gridExtra)
+library(grid)
+library(pcaMethods)
+library(impute)
+library(pheatmap)
+library(ggh4x)
+
+```
+
+#Calculate the total number of MS3 spectra acquired per batch
+
+```{r}
+
+# Single summary file path
+summary_file <- "../../../R_import/HV3TS/summary/summary.txt"
+
+# Function to read, clean, and plot the summary file
+plot_ms3_per_fraction <- function(filepath, batch_label = "HV3TS") {
+  data <- read.table(filepath, header = TRUE, sep = "\t")
+  
+  data_clean <- data %>%
+    filter(!is.na(Fraction)) %>%
+    mutate(Fraction = factor(Fraction, levels = 1:48))
+  
+  p <- ggplot(data_clean, aes(x = Fraction, y = MS3)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    theme_minimal() +
+    labs(
+      title = paste("MS3 scans", batch_label),
+      x = NULL,
+      y = "MS3 Identifications"
+    ) +
+    theme(
+      axis.text.x = element_text(angle = 90, vjust = 0.5, size = 6),
+      plot.title = element_text(size = 12, hjust = 0.5)
+    )
+  
+  return(p)
+}
+
+# Generate the plot
+p <- plot_ms3_per_fraction(summary_file, "HV3TS")
+
+# Show the plot
+print(p)
+
+# Save the plot
+ggsave("../../../R_export/HV3TS/ms3_ID_Hv6.png",
+       p, width = 7, height = 5, dpi = 300, scale = 0.8)
+
+
+```
+
+#Check data distribution and structure 
+Here using ibaq protein groups after conversion with ibaq pipeline 
+```{r}
+
+# --- Load file ---
+data_file <- "../../../R_import/HV3TS/pG_ibaq/pG_BAR_b1.csv"
+pG_HV3TS <- data.table::fread(data_file)
+
+# --- Remove Contaminants, Reverse, or OIBS ---
+if (all(c("Reverse", "Potential.contaminant", "Only.identified.by.site") %in% colnames(pG_HV3TS))) {
+  pG_HV3TS <- pG_HV3TS[
+    Reverse != "+" &
+    Potential.contaminant != "+" &
+    Only.identified.by.site != "+"
+  ]
+} else if ("Reverse" %in% colnames(pG_HV3TS)) {
+  pG_HV3TS <- pG_HV3TS[Reverse != "+"]
+}
+
+# --- Log2 Transformation of iBAQ Columns ---
+ibaq_cols <- grep("iBAQ", colnames(pG_HV3TS), value = TRUE)
+pG_HV3TS[, (ibaq_cols) := lapply(.SD, function(x) {
+  x <- as.numeric(as.character(x))
+  x[is.na(x)] <- 0
+  log2(x + 1)
+}), .SDcols = ibaq_cols]
+
+# --- Median Centering of iBAQ Columns ---
+pG_HV3TS[, (ibaq_cols) := lapply(.SD, function(x) x - median(x, na.rm = TRUE)), .SDcols = ibaq_cols]
+
+# --- Output directories ---
+plot_dir <- "../../../R_export/HV3TS/data_distribution/"
+heatmap_dir <- "../../../R_export/HV3TS/heatmaps/"
+dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(heatmap_dir, showWarnings = FALSE, recursive = TRUE)
+
+# --- iBAQ Histogram Plots ---
+ibaq_cols_hist <- grep("_summed_iBAQ$", colnames(pG_HV3TS), value = TRUE)
+if (length(ibaq_cols_hist) > 0) {
+  plots <- lapply(seq_along(ibaq_cols_hist), function(i) {
+    ggplot(pG_HV3TS, aes_string(x = ibaq_cols_hist[i])) +
+      geom_histogram(binwidth = 0.7, fill = "#105CB6", color = "black") +
+      labs(title = paste("Channel", i), x = "Reporter Intensity (iBAQ)", y = "Frequency") +
+      theme_classic() +
+      xlim(-25, 15) +
+      theme(
+        plot.title = element_text(size = 12, hjust = 0.5),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 10)
+      )
+  })
+
+  title <- grid::textGrob("pG_HV3TS", gp = grid::gpar(fontsize = 16, fontface = "bold"))
+  plot_grid <- gridExtra::arrangeGrob(grobs = plots, ncol = 3, top = title)
+
+  ggplot2::ggsave(
+    filename = file.path(plot_dir, "pG_HV3TS_iBAQ_distribution.png"),
+    plot = plot_grid,
+    width = 12,
+    height = 9,
+    scale = 0.9
+  )
+  message("Saved iBAQ distribution plot for HV3TS.")
+} else {
+  message("No _summed_iBAQ columns found for HV3TS.")
+}
+
+# --- Heatmap Generation ---
+ibaq_cols_heatmap <- grep("_iBAQ$", colnames(pG_HV3TS), value = TRUE)
+if (length(ibaq_cols_heatmap) >= 2) {
+  mat_raw <- as.matrix(pG_HV3TS[, ..ibaq_cols_heatmap])
+  rownames(mat_raw) <- pG_HV3TS$Protein.IDs_pG
+  mat_raw[is.na(mat_raw)] <- -23
+  mat_scaled <- t(scale(t(mat_raw)))
+  mat_scaled <- mat_scaled[apply(mat_scaled, 1, function(x) all(!is.na(x))), ]
+
+  # Save static PNG
+  heatmap_file <- file.path(heatmap_dir, "pG_HV3TS_heatmap_scaled.png")
+  pheatmap::pheatmap(
+    mat_scaled,
+    filename = heatmap_file,
+    cluster_rows = TRUE,
+    cluster_cols = FALSE,
+    show_rownames = FALSE,
+    labels_col = paste0("channel", 1:length(ibaq_cols_heatmap))
+  )
+  message("Saved heatmap for HV3TS (", length(ibaq_cols_heatmap), " iBAQ columns).")
+} else {
+  message("Skipping heatmap for HV3TS - only ", length(ibaq_cols_heatmap), " _iBAQ columns found (need ≥2).")
+}
+
+```
+
+##Normalisation 
+- In this script we take our protein groups with ibaq values and we filter, transform and normaliye them so that thez are readz to be used for quantiative comparisons  
+
+
+```{r}
+## ============================================================
+## Batch 1 — HV3TS  (CLEAN PIPELINE: reverse removal → filtering 
+## → median normalization → log2 transform)
+## ============================================================
+
+library(data.table)
+library(ggplot2)
+library(pheatmap)
+
+# ------------------------------------------------------------
+# STEP 1 — Load data and remove reverse hits
+# ------------------------------------------------------------
+file_path_b1 <- "../../../R_import/HV3TS/pG_ibaq/pG_BAR_b1.csv"
+b1_BAR_raw <- fread(file_path_b1)
+
+if ("Reverse_pG" %in% colnames(b1_BAR_raw)) {
+  n_before <- nrow(b1_BAR_raw)
+  b1_BAR_raw <- b1_BAR_raw[Reverse_pG != "+", ]
+  n_after <- nrow(b1_BAR_raw)
+  cat(sprintf("Removed %d reverse hits. Remaining proteins: %d\n",
+              n_before - n_after, n_after))
+}
+
+# Identify iBAQ intensity columns
+intensity_cols <- grep("_summed_iBAQ$", colnames(b1_BAR_raw), value = TRUE)
+stopifnot(length(intensity_cols) > 0)
+
+# ------------------------------------------------------------
+# STEP 2 — Remove proteins with >4 missing values (<0.1 counts as missing)
+# ------------------------------------------------------------
+n_before <- nrow(b1_BAR_raw)
+keep_rows <- apply(b1_BAR_raw[, ..intensity_cols], 1,
+                   function(x) sum(is.na(x) | x < 0.1) <= 4)
+b1_BAR_raw <- b1_BAR_raw[keep_rows]
+n_after <- nrow(b1_BAR_raw)
+cat(sprintf("Removed %d proteins with >4 missing/<0.1 values. Remaining: %d\n",
+            n_before - n_after, n_after))
+
+# ------------------------------------------------------------
+# Helper functions for QC plots
+# ------------------------------------------------------------
+make_qc_plot <- function(df, title, intensity_cols) {
+  sums    <- colSums(df[, ..intensity_cols], na.rm = TRUE)
+  medians <- sapply(intensity_cols, function(cn) median(df[[cn]], na.rm = TRUE))
+
+  stats_df <- data.table(
+    Channel = factor(paste0("Ch", seq_along(intensity_cols)),
+                     levels = paste0("Ch", seq_along(intensity_cols))),
+    Total_Intensity = sums,
+    Median_Intensity = medians
+  )
+
+  # Rescale median curve to fit bar scale
+  scale_factor <- max(stats_df$Total_Intensity) / max(stats_df$Median_Intensity)
+
+  ggplot(stats_df, aes(x = Channel)) +
+    geom_bar(aes(y = Total_Intensity), stat = "identity", fill = "steelblue", alpha = 0.6) +
+    geom_point(aes(y = Median_Intensity * scale_factor), color = "red", size = 2.5) +
+    geom_line(aes(y = Median_Intensity * scale_factor), color = "red", linewidth = 0.7) +
+    scale_y_continuous(
+      name = "Total Intensity (sum)",
+      sec.axis = sec_axis(~ . / scale_factor, name = "Median Intensity")
+    ) +
+    labs(title = title) +
+    theme_classic()
+}
+
+make_heatmap <- function(df, title, intensity_cols, outfile = NULL, max_rows = 1000) {
+  m <- as.matrix(df[, ..intensity_cols])
+  mode(m) <- "numeric"
+  m[!is.finite(m)] <- NA
+
+  m_log <- log10(m + 1)
+
+  if (nrow(m_log) > max_rows) {
+    vars <- apply(m_log, 1, var, na.rm = TRUE)
+    idx <- order(vars, decreasing = TRUE)[1:max_rows]
+    m_log <- m_log[idx, , drop = FALSE]
+  }
+
+  colnames(m_log) <- paste0("Ch", seq_along(intensity_cols))
+
+  pheatmap(
+    m_log,
+    filename = outfile,
+    main = title,
+    scale = "row",
+    cluster_rows = TRUE,
+    cluster_cols = FALSE,
+    show_rownames = FALSE,
+    border_color = NA,
+    silent = !is.null(outfile)
+  )
+}
+
+# ------------------------------------------------------------
+# STEP 3 — QC BEFORE normalization
+# ------------------------------------------------------------
+export_dir <- "../../../R_export/HV3TS/pg_iBAQ_intra/b1"
+if (!dir.exists(export_dir)) dir.create(export_dir, recursive = TRUE)
+
+# Barplot
+p_pre <- make_qc_plot(b1_BAR_raw, "QC — pre-normalization", intensity_cols)
+ggsave(file.path(export_dir, "qc_preNorm.png"), p_pre, width = 10, height = 5, dpi = 150)
+
+# Heatmap
+make_heatmap(b1_BAR_raw, "Heatmap — pre-normalization", intensity_cols,
+             outfile = file.path(export_dir, "heatmap_preNorm.png"))
+
+# ------------------------------------------------------------
+# STEP 4 — MEDIAN NORMALIZATION
+# ------------------------------------------------------------
+sample_medians <- sapply(intensity_cols,
+                         function(cn) median(b1_BAR_raw[[cn]], na.rm = TRUE))
+
+grand_median <- median(sample_medians, na.rm = TRUE)
+cor_factors <- grand_median / sample_medians
+
+cat("Median normalization factors:\n")
+print(cor_factors)
+
+# Apply correction
+for (col in intensity_cols) {
+  b1_BAR_raw[[col]] <- b1_BAR_raw[[col]] * cor_factors[col]
+}
+
+cat("Median normalization applied.\n")
+
+# ------------------------------------------------------------
+# STEP 5 — Log2 transformation
+# ------------------------------------------------------------
+for (col in intensity_cols) {
+  b1_BAR_raw[[col]] <- log2(b1_BAR_raw[[col]] + 1)
+}
+cat("Applied log2(+1) transform.\n")
+
+# ------------------------------------------------------------
+# STEP 6 — QC AFTER normalization + Save final matrix
+# ------------------------------------------------------------
+p_post <- make_qc_plot(b1_BAR_raw, "QC — post-normalization", intensity_cols)
+ggsave(file.path(export_dir, "qc_postNorm.png"), p_post, width = 10, height = 5, dpi = 150)
+
+make_heatmap(b1_BAR_raw, "Heatmap — post-normalization", intensity_cols,
+             outfile = file.path(export_dir, "heatmap_postNorm.png"))
+
+out_file <- "../../../R_Data/HV3TS/pg_iBAQ_intra/pg_iBAQ_BAR_b1_mediannorm.csv"
+fwrite(b1_BAR_raw, out_file)
+
+cat(sprintf("Saved normalized + log2-transformed dataset to:\n  %s\n", out_file))
+
+
+```
+
+#In this chunk we map intensity values to our protein groups 
+
+```{r}
+
+## ============================================
+## HV3TS — Attach functional annotation to BAR data (single batch, 6 time points)
+## ============================================
+
+
+# ==========================================================
+# STEP 0 — Load the normalized + log2-transformed BAR file
+# ==========================================================
+cat("Loading b1_BAR_raw (normalized + log2-transformed)...\n")
+
+b1_BAR_path <- "../../../R_Data/HV3TS/pg_iBAQ_intra/pg_iBAQ_BAR_b1_mediannorm.csv"
+if (!file.exists(b1_BAR_path)) {
+  stop("❌ Could not find b1_BAR_raw file at: ", b1_BAR_path)
+}
+
+b1_BAR_raw <- fread(b1_BAR_path)
+cat("✅ Loaded b1_BAR_raw with", nrow(b1_BAR_raw), "proteins and", ncol(b1_BAR_raw), "columns.\n")
+
+
+# ==========================================================
+# STEP 1 — Load DB matches (barley vs barley UniProt)
+# ==========================================================
+path <- "../../../R_import/Hv6/anno/DB_fasta_vs_up"
+
+barley_hvup <- read.delim(file.path(path, "barke_upbarley.tsv"),
+                          sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+barley_hvup <- barley_hvup[, 1:2]
+colnames(barley_hvup) <- c("barleyup_entry", "barley_entry")
+
+# Clean and deduplicate
+barley_hvup$barleyup_entry <- sub("^[^|]*\\|[^|]*\\|", "", barley_hvup$barleyup_entry)
+barley_hvup <- barley_hvup %>% distinct(barley_entry, .keep_all = TRUE)
+
+
+# ==========================================================
+# STEP 2 — Attach UniProt functional annotation (barley)
+# ==========================================================
+path <- "../../../R_import/Hv6/anno/masters_up"
+
+up_Hv <- read.delim(file.path(path, "unip_Hv_1505.tsv"),
+                    sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+up_Hv <- up_Hv[, c(3,4,5,7,8,9)]
+colnames(up_Hv) <- c("barleyup_entryname", "barleyup_pname", "barleyup_gname",
+                     "barleyup_GO_bp", "barleyup_GO_mf", "barleyup_GO_cc")
+
+barley_anno <- merge(
+  barley_hvup,
+  up_Hv,
+  by.x = "barleyup_entry",
+  by.y = "barleyup_entryname",
+  all.x = TRUE
+)
+
+
+# ==========================================================
+# STEP 3 — Add Arabidopsis ortholog mapping and annotation
+# ==========================================================
+path <- "../../../R_import/Hv6/anno/DB_fasta_vs_upAt"
+
+barley_ATup <- read.delim(file.path(path, "araT_barke.tsv"),
+                          sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+barley_ATup <- barley_ATup[, 1:2]
+colnames(barley_ATup) <- c("barley_entry", "araT_entry")
+barley_ATup$araT_entry <- sub("^[^|]*\\|[^|]*\\|", "", barley_ATup$araT_entry)
+barley_ATup <- barley_ATup %>% distinct(barley_entry, .keep_all = TRUE)
+
+# Merge with barley annotation
+barley_anno_expat <- merge(
+  barley_anno,
+  barley_ATup,
+  by = "barley_entry",
+  all.x = TRUE
+)
+
+# Arabidopsis UniProt annotation
+At_UP_annotated <- read_tsv("../../../R_import/Hv6/anno/masters_up/unip_At_1505.tsv")
+At_UP_annotated <- At_UP_annotated[, c(2,3,4,5,6,7,8)]
+At_UP_annotated <- At_UP_annotated %>% mutate(TAIR = sub(";.*", "", TAIR))
+
+# Merge full annotation
+barley_full_anno <- merge(
+  barley_anno_expat,
+  At_UP_annotated,
+  by.x = "araT_entry",
+  by.y = "Entry Name",
+  all.x = TRUE
+)
+
+barley_full_anno <- barley_full_anno[, c(2,3,4,5,6,7,8,1,14,9,10,11,12,13)]
+colnames(barley_full_anno) <- c("barley_entry","barleyup_entry","barleyup_pname","barleyup_gname",
+                                "barleyup_GO_bp","barleyup_GO_mf","barleyup_GO_cc","araT_entry",
+                                "TAIR","atup_pname","atup_gname","at_GO_bp","at_GO_mf","at_GO_cc")
+
+
+# ==========================================================
+# STEP 4 — Merge annotations with intensity matrix
+# ==========================================================
+setDT(barley_full_anno)
+
+HV3TS_final <- merge(
+  b1_BAR_raw,
+  barley_full_anno,
+  by.x = "Protein.IDs_pG",
+  by.y = "barley_entry",
+  all.x = TRUE,
+  sort  = FALSE
+)
+
+# Move annotation columns next to ID
+anno_cols <- setdiff(names(barley_full_anno), "barley_entry")
+setcolorder(HV3TS_final,
+            c("Protein.IDs_pG", anno_cols,
+              setdiff(names(HV3TS_final), c("Protein.IDs_pG", anno_cols))))
+
+
+# ==========================================================
+# STEP 5 — Save final annotated + intensity matrix
+# ==========================================================
+out_dir <- "../../../R_Data/HV3TS/final_annotation"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+out_path <- file.path(out_dir, "HV3TS_BAR_final.csv")
+fwrite(HV3TS_final, out_path)
+
+message("✅ Saved final annotated HV3TS BAR matrix to: ", out_path)
+
+```
+
+#Generate heatmaps for specific protein families 
+
+```{r}
+
+## ============================================
+## HV3TS — Expression of enzyme families (tissue-specific)
+## ============================================
+
+library(data.table)
+library(dplyr)
+library(pheatmap)
+library(RColorBrewer)
+
+# -------------------------
+# STEP 1 — Load data
+# -------------------------
+out_path <- "../../../R_Data/HV3TS/final_annotation/HV3TS_BAR_final.csv"
+final_HV3TS_mat <- fread(out_path)
+cat("✅ Loaded HV3TS dataset with", nrow(final_HV3TS_mat), "proteins and", ncol(final_HV3TS_mat), "columns.\n")
+
+# -------------------------
+# STEP 2 — Select intensity columns
+# -------------------------
+int_cols <- grep("corrected\\.\\d_ev_ratio_TMT_corrected_summed_iBAQ$", names(final_HV3TS_mat), value = TRUE)
+if (length(int_cols) == 0) stop("❌ No valid intensity columns found.")
+cat("Selected", length(int_cols), "intensity columns.\n")
+
+# Rename for clarity (tissue order)
+time_points <- c("Aleurone", "Coat", "Embryo", "Endosperm", "Scutellum", "Seed")
+setnames(final_HV3TS_mat, old = int_cols, new = time_points)
+int_cols <- time_points
+
+# -------------------------
+# STEP 3 — Define enzyme families
+# -------------------------
+all_families_ID <- list(
+  # --- STARCH DEGRADATION ---
+  `Alpha-amylase` = c(
+    "HORVU.BARKE.PROJ.3HG00259920.1","HORVU.BARKE.PROJ.5HG00441970.1","HORVU.BARKE.PROJ.6HG00559240.1","HORVU.BARKE.PROJ.6HG00561370.1",
+    "HORVU.BARKE.PROJ.7HG00653310.1","HORVU.BARKE.PROJ.7HG00653330.1"
+  ),
+  `Beta-amylase` = c(
+    "HORVU.BARKE.PROJ.4HG00303690.1","HORVU.BARKE.PROJ.1HG00036740.1","HORVU.BARKE.PROJ.2HG00126310.1",
+    "HORVU.BARKE.PROJ.4HG00376360.1","HORVU.BARKE.PROJ.4HG00380960.1"
+  ),
+  `Alpha-glucosidase` = c(
+    "HORVU.BARKE.PROJ.1HG00052860.1","HORVU.BARKE.PROJ.7HG00595360.1","HORVU.BARKE.PROJ.2HG00192840.1",
+    "HORVU.BARKE.PROJ.2HG00192880.1","HORVU.BARKE.PROJ.3HG00202550.1",
+    "HORVU.BARKE.PROJ.4HG00360800.1","HORVU.BARKE.PROJ.7HG00666400.1"
+  ),
+  `Isoamylase` = c(
+    "HORVU.BARKE.PROJ.1HG00057560.1","HORVU.BARKE.PROJ.2HG00149340.1","HORVU.BARKE.PROJ.2HG00154890.1",
+    "HORVU.BARKE.PROJ.5HG00443610.1","HORVU.BARKE.PROJ.7HG00618070.1",
+    "HORVU.BARKE.PROJ.7HG00645630.1","HORVU.BARKE.PROJ.7HG00681480.1","HORVU.BARKE.PROJ.7HG00823000.1"
+  ),
+
+  # --- CELL WALL DEGRADATION ---
+  `Beta-glucanase` = c(
+    "HORVU.BARKE.PROJ.7HG00638840.1","HORVU.BARKE.PROJ.5HG00427900.1","HORVU.BARKE.PROJ.5HG00453760.1",
+    "HORVU.BARKE.PROJ.7HG00596870.1","HORVU.BARKE.PROJ.7HG00606250.1",
+    "HORVU.BARKE.PROJ.7HG00805710.1","HORVU.BARKE.PROJ.5HG00434990.1","HORVU.BARKE.PROJ.6HG00508740.1",
+    "HORVU.BARKE.PROJ.7HG00596880.1","HORVU.BARKE.PROJ.1HG00014980.1","HORVU.BARKE.PROJ.6HG00561940.1",
+    "HORVU.BARKE.PROJ.1HG00073020.1","HORVU.BARKE.PROJ.7HG00653770.1","HORVU.BARKE.PROJ.1HG00018950.1",
+    "HORVU.BARKE.PROJ.5HG00452800.1","HORVU.BARKE.PROJ.4HG00311880.1","HORVU.BARKE.PROJ.4HG00345900.1",
+    "HORVU.BARKE.PROJ.2HG00162350.1","HORVU.BARKE.PROJ.2HG00192140.1","HORVU.BARKE.PROJ.3HG00226090.1",
+    "HORVU.BARKE.PROJ.4HG00379800.1","HORVU.BARKE.PROJ.1HG00078380.1","HORVU.BARKE.PROJ.6HG00554880.1",
+    "HORVU.BARKE.PROJ.7HG00607220.1","HORVU.BARKE.PROJ.2HG00154880.1","HORVU.BARKE.PROJ.4HG00315590.1",
+    "HORVU.BARKE.PROJ.3HG00268790.1","HORVU.BARKE.PROJ.7HG00639580.1",
+    "HORVU.BARKE.PROJ.1HG00046400.1","HORVU.BARKE.PROJ.1HG00038030.1"
+  ),
+  `Beta-glucosidase` = c(
+    "HORVU.BARKE.PROJ.2HG00165000.1","HORVU.BARKE.PROJ.2HG00165020.1","HORVU.BARKE.PROJ.3HG00285690.1",
+    "HORVU.BARKE.PROJ.3HG00270250.1","HORVU.BARKE.PROJ.5HG00449910.1","HORVU.BARKE.PROJ.1HG00054020.1",
+    "HORVU.BARKE.PROJ.5HG00449920.1","HORVU.BARKE.PROJ.5HG00449830.1","HORVU.BARKE.PROJ.5HG00449840.1",
+    "HORVU.BARKE.PROJ.2HG00187930.1","HORVU.BARKE.PROJ.2HG00159250.1","HORVU.BARKE.PROJ.2HG00159220.1",
+    "HORVU.BARKE.PROJ.7HG00616950.1","HORVU.BARKE.PROJ.7HG00612580.1","HORVU.BARKE.PROJ.7HG00649790.1",
+    "HORVU.BARKE.PROJ.5HG00446020.1","HORVU.BARKE.PROJ.4HG00361530.1","HORVU.BARKE.PROJ.7HG00663760.1",
+    "HORVU.BARKE.PROJ.3HG00279420.1","HORVU.BARKE.PROJ.3HG00199770.1","HORVU.BARKE.PROJ.2HG00107620.1",
+    "HORVU.BARKE.PROJ.4HG00308030.1","HORVU.BARKE.PROJ.4HG00308050.1","HORVU.BARKE.PROJ.7HG00653840.1",
+    "HORVU.BARKE.PROJ.2HG00164980.1","HORVU.BARKE.PROJ.5HG00463840.1","HORVU.BARKE.PROJ.5HG00463920.1",
+    "HORVU.BARKE.PROJ.7HG00812770.1","HORVU.BARKE.PROJ.1HG00027930.1","HORVU.BARKE.PROJ.1HG00694950.1",
+    "HORVU.BARKE.PROJ.3HG00266590.1","HORVU.BARKE.PROJ.5HG00463890.1","HORVU.BARKE.PROJ.ptg000375lG00684260.1",
+    "HORVU.BARKE.PROJ.5HG00463790.1","HORVU.BARKE.PROJ.3HG00231710.1","HORVU.BARKE.PROJ.5HG00463960.1",
+    "HORVU.BARKE.PROJ.1HG00067000.1","HORVU.BARKE.PROJ.2HG00181540.1","HORVU.BARKE.PROJ.2HG00181530.1"
+  ),
+  `Arabinofuranosidase` = c(
+    "HORVU.BARKE.PROJ.5HG00420480.1","HORVU.BARKE.PROJ.4HG00325990.1","HORVU.BARKE.PROJ.4HG00346830.1",
+    "HORVU.BARKE.PROJ.2HG00101670.1","HORVU.BARKE.PROJ.4HG00326450.1"
+  ),
+  `Mannanase` = c(
+    "HORVU.BARKE.PROJ.3HG00263090.1","HORVU.BARKE.PROJ.7HG00612160.1","HORVU.BARKE.PROJ.3HG00203070.1",
+    "HORVU.BARKE.PROJ.5HG00771660.1","HORVU.BARKE.PROJ.6HG00561230.1","HORVU.BARKE.PROJ.5HG00479880.1",
+    "HORVU.BARKE.PROJ.3HG00253120.1","HORVU.BARKE.PROJ.6HG00561220.1"
+  ),
+  `Alpha-galactosidase` = c(
+    "HORVU.BARKE.PROJ.5HG00772750.1","HORVU.BARKE.PROJ.1HG00041240.1","HORVU.BARKE.PROJ.5HG00772740.1",
+    "HORVU.BARKE.PROJ.1HG00041210.1","HORVU.BARKE.PROJ.2HG00102930.1","HORVU.BARKE.PROJ.6HG00537080.1",
+    "HORVU.BARKE.PROJ.6HG00556460.1"
+  ),
+  `Polygalacturonase` = c(
+    "HORVU.BARKE.PROJ.6HG00502310.1","HORVU.BARKE.PROJ.3HG00294100.1","HORVU.BARKE.PROJ.1HG00694870.1","HORVU.BARKE.PROJ.5HG00475050.1",
+    "HORVU.BARKE.PROJ.7HG00599930.1","HORVU.BARKE.PROJ.5HG00475020.1","HORVU.BARKE.PROJ.6HG00562290.1","HORVU.BARKE.PROJ.5HG00445800.1",
+    "HORVU.BARKE.PROJ.3HG00278800.1","HORVU.BARKE.PROJ.2HG00170720.1","HORVU.BARKE.PROJ.3HG00221410.1","HORVU.BARKE.PROJ.2HG00170710.1",
+    "HORVU.BARKE.PROJ.7HG00622760.2","HORVU.BARKE.PROJ.5HG00476730.1","HORVU.BARKE.PROJ.7HG00656610.1","HORVU.BARKE.PROJ.2HG00180220.1",
+    "HORVU.BARKE.PROJ.7HG00622760.1","HORVU.BARKE.PROJ.2HG00177430.1","HORVU.BARKE.PROJ.3HG00731530.1","HORVU.BARKE.PROJ.3HG00250260.1",
+    "HORVU.BARKE.PROJ.7HG00656560.1","HORVU.BARKE.PROJ.7HG00641670.1","HORVU.BARKE.PROJ.1HG00072280.1","HORVU.BARKE.PROJ.1HG00072330.1",
+    "HORVU.BARKE.PROJ.1HG00072290.1","HORVU.BARKE.PROJ.4HG00314970.1","HORVU.BARKE.PROJ.3HG00745990.1","HORVU.BARKE.PROJ.3HG00279930.1",
+    "HORVU.BARKE.PROJ.7HG00640290.1","HORVU.BARKE.PROJ.5HG00404030.1","HORVU.BARKE.PROJ.3HG00238660.1","HORVU.BARKE.PROJ.3HG00204800.1",
+    "HORVU.BARKE.PROJ.5HG00481490.1","HORVU.BARKE.PROJ.1HG00062490.1","HORVU.BARKE.PROJ.5HG00436830.1","HORVU.BARKE.PROJ.7HG00576880.1",
+    "HORVU.BARKE.PROJ.6HG00519420.1","HORVU.BARKE.PROJ.7HG00656560.2","HORVU.BARKE.PROJ.7HG00656680.1","HORVU.BARKE.PROJ.7HG00656650.1",
+    "HORVU.BARKE.PROJ.4HG00315000.1","HORVU.BARKE.PROJ.4HG00376400.1","HORVU.BARKE.PROJ.3HG00248590.1","HORVU.BARKE.PROJ.1HG00013170.1",
+    "HORVU.BARKE.PROJ.4HG00360780.1","HORVU.BARKE.PROJ.1HG00013190.1","HORVU.BARKE.PROJ.2HG00173550.1"
+  ),
+  `Pectin esterase` = c(
+    "HORVU.BARKE.PROJ.7HG00656950.1","HORVU.BARKE.PROJ.7HG00598930.1","HORVU.BARKE.PROJ.5HG00473670.1","HORVU.BARKE.PROJ.7HG00639410.1",
+    "HORVU.BARKE.PROJ.3HG00268440.1","HORVU.BARKE.PROJ.2HG00188100.1","HORVU.BARKE.PROJ.4HG00349290.1",
+    "HORVU.BARKE.PROJ.2HG00100460.1","HORVU.BARKE.PROJ.3HG00232130.1","HORVU.BARKE.PROJ.2HG00157350.1",
+    "HORVU.BARKE.PROJ.7HG00593290.1","HORVU.BARKE.PROJ.5HG00391190.1","HORVU.BARKE.PROJ.2HG00103570.1",
+    "HORVU.BARKE.PROJ.1HG00045130.1","HORVU.BARKE.PROJ.3HG00230000.1","HORVU.BARKE.PROJ.6HG00564170.1",
+    "HORVU.BARKE.PROJ.1HG00085260.1","HORVU.BARKE.PROJ.1HG00058460.1","HORVU.BARKE.PROJ.1HG00054490.1",
+    "HORVU.BARKE.PROJ.5HG00437860.1","HORVU.BARKE.PROJ.2HG00154320.1","HORVU.BARKE.PROJ.3HG00280980.1",
+    "HORVU.BARKE.PROJ.1HG00069330.1","HORVU.BARKE.PROJ.2HG00102050.1","HORVU.BARKE.PROJ.2HG00706320.1",
+    "HORVU.BARKE.PROJ.2HG00115940.1","HORVU.BARKE.PROJ.5HG00403060.1","HORVU.BARKE.PROJ.2HG00107880.1",
+    "HORVU.BARKE.PROJ.2HG00105260.1","HORVU.BARKE.PROJ.2HG00105250.1","HORVU.BARKE.PROJ.2HG00107890.1",
+    "HORVU.BARKE.PROJ.3HG00300590.1","HORVU.BARKE.PROJ.2HG00171960.1","HORVU.BARKE.PROJ.4HG00366450.1",
+    "HORVU.BARKE.PROJ.4HG00328640.1","HORVU.BARKE.PROJ.4HG00328630.1"
+  ),
+  `Xylan endohydrolase` = c(
+    "HORVU.BARKE.PROJ.3HG00205970.1","HORVU.BARKE.PROJ.4HG00305690.1","HORVU.BARKE.PROJ.5HG00471950.1",
+    "HORVU.BARKE.PROJ.3HG00205980.1","HORVU.BARKE.PROJ.5HG00779790.1","HORVU.BARKE.PROJ.5HG00471990.1",
+    "HORVU.BARKE.PROJ.2HG00105770.1"
+  ),
+  `Beta-xylosidase` = c("HORVU.BARKE.PROJ.2HG00188490.1"),
+  `Chitinase` = c("HORVU.BARKE.PROJ.2HG00171400.1"),
+
+  # --- LIPID DEGRADATION ---
+  `Phospholipase A1` = c(
+    "HORVU.BARKE.PROJ.2HG00164160.1","HORVU.BARKE.PROJ.1HG00083010.1","HORVU.BARKE.PROJ.1HG00060140.1","HORVU.BARKE.PROJ.3HG00251690.1",
+    "HORVU.BARKE.PROJ.3HG00251820.1","HORVU.BARKE.PROJ.1HG00081650.1","HORVU.BARKE.PROJ.1HG00083090.1","HORVU.BARKE.PROJ.3HG00251700.1",
+    "HORVU.BARKE.PROJ.1HG00082950.1","HORVU.BARKE.PROJ.1HG00053440.1","HORVU.BARKE.PROJ.3HG00287780.1","HORVU.BARKE.PROJ.2HG00108030.1",
+    "HORVU.BARKE.PROJ.3HG00279020.1","HORVU.BARKE.PROJ.4HG00313040.1","HORVU.BARKE.PROJ.4HG00313000.1","HORVU.BARKE.PROJ.6HG00543590.1",
+    "HORVU.BARKE.PROJ.1HG00051590.1","HORVU.BARKE.PROJ.7HG00635870.1","HORVU.BARKE.PROJ.3HG00295580.1","HORVU.BARKE.PROJ.1HG00058050.1",
+    "HORVU.BARKE.PROJ.3HG00295590.1","HORVU.BARKE.PROJ.3HG00259290.1","HORVU.BARKE.PROJ.3HG00248560.1","HORVU.BARKE.PROJ.3HG00231880.1",
+    "HORVU.BARKE.PROJ.5HG00389370.1"
+  ),
+  `Phospholipase A2` = c(  # renamed from Phospholipase A2_Hv
+    "HORVU.BARKE.PROJ.7HG00665330.1","HORVU.BARKE.PROJ.4HG00355590.1","HORVU.BARKE.PROJ.4HG00308310.1",
+    "HORVU.BARKE.PROJ.2HG00180400.1","HORVU.BARKE.PROJ.1HG00072800.1",
+    "HORVU.BARKE.PROJ.1HG00006150.1","HORVU.BARKE.PROJ.6HG00784580.1","HORVU.BARKE.PROJ.2HG00107210.1"
+  ),
+  `Phospholipase D` = c(
+    "HORVU.BARKE.PROJ.6HG00499590.1","HORVU.BARKE.PROJ.7HG00621120.1","HORVU.BARKE.PROJ.3HG00270400.1",
+    "HORVU.BARKE.PROJ.2HG00147990.1","HORVU.BARKE.PROJ.3HG00270400.2","HORVU.BARKE.PROJ.4HG00315710.1","HORVU.BARKE.PROJ.4HG00315700.1",
+    "HORVU.BARKE.PROJ.6HG00556090.1","HORVU.BARKE.PROJ.2HG00706940.1","HORVU.BARKE.PROJ.1HG00024430.1","HORVU.BARKE.PROJ.2HG00116340.1",
+    "HORVU.BARKE.PROJ.2HG00093030.1","HORVU.BARKE.PROJ.3HG00265370.1","HORVU.BARKE.PROJ.6HG00788600.1","HORVU.BARKE.PROJ.1HG00024450.1",
+    "HORVU.BARKE.PROJ.7HG00616200.1","HORVU.BARKE.PROJ.2HG00720350.1","HORVU.BARKE.PROJ.6HG00533900.1","HORVU.BARKE.PROJ.6HG00521550.1",
+    "HORVU.BARKE.PROJ.1HG00074020.1","HORVU.BARKE.PROJ.7HG00651940.1","HORVU.BARKE.PROJ.3HG00221500.1","HORVU.BARKE.PROJ.1HG00075940.1",
+    "HORVU.BARKE.PROJ.1HG00025160.1","HORVU.BARKE.PROJ.4HG00381620.1","HORVU.BARKE.PROJ.1HG00075980.1","HORVU.BARKE.PROJ.4HG00381810.1",
+    "HORVU.BARKE.PROJ.5HG00439260.1","HORVU.BARKE.PROJ.1HG00045880.1","HORVU.BARKE.PROJ.4HG00377390.1","HORVU.BARKE.PROJ.1HG00072310.1",
+    "HORVU.BARKE.PROJ.5HG00455460.1","HORVU.BARKE.PROJ.5HG00434890.1","HORVU.BARKE.PROJ.6HG00499580.1","HORVU.BARKE.PROJ.1HG00054620.1"
+  ),
+  `Phospholipase C` = c(
+    "HORVU.BARKE.PROJ.1HG00014000.1","HORVU.BARKE.PROJ.2HG00099060.1","HORVU.BARKE.PROJ.1HG00014040.1",
+    "HORVU.BARKE.PROJ.5HG00409430.1","HORVU.BARKE.PROJ.5HG00423610.1","HORVU.BARKE.PROJ.4HG00350900.1"
+  ),
+  `Lipase` = c(
+    "HORVU.BARKE.PROJ.2HG00116590.1","HORVU.BARKE.PROJ.5HG00452660.1","HORVU.BARKE.PROJ.7HG00622910.1",
+    "HORVU.BARKE.PROJ.5HG00450050.1","HORVU.BARKE.PROJ.5HG00424780.1","HORVU.BARKE.PROJ.7HG00654330.1",
+    "HORVU.BARKE.PROJ.2HG00143600.1","HORVU.BARKE.PROJ.7HG00620220.1","HORVU.BARKE.PROJ.7HG00654320.1",
+    "HORVU.BARKE.PROJ.3HG00279020.1","HORVU.BARKE.PROJ.4HG00313040.1","HORVU.BARKE.PROJ.3HG00248560.1",
+    "HORVU.BARKE.PROJ.3HG00231880.1","HORVU.BARKE.PROJ.3HG00265210.1","HORVU.BARKE.PROJ.5HG00476290.1"
+  ),
+  `Lipoxygenase-1` = c(
+    "HORVU.BARKE.PROJ.5HG00462380.1","HORVU.BARKE.PROJ.4HG00307600.1","HORVU.BARKE.PROJ.2HG00188750.1","HORVU.BARKE.PROJ.4HG00307640.1"
+  ),
+  `Lipoxygenase-2` = c(
+    "HORVU.BARKE.PROJ.3HG00735580.1","HORVU.BARKE.PROJ.4HG00760420.1","HORVU.BARKE.PROJ.6HG00519710.1","HORVU.BARKE.PROJ.6HG00490920.1",
+    "HORVU.BARKE.PROJ.5HG00383870.1","HORVU.BARKE.PROJ.7HG00579310.1","HORVU.BARKE.PROJ.7HG00616920.1"
+  ),
+  `Hydroperoxide lyase` = c("HORVU.BARKE.PROJ.6HG00493590.1"),
+  `Allene oxide synthase` = c(  # renamed from Allene oxide synthase_Hv
+    "HORVU.BARKE.PROJ.3HG00297970.1","HORVU.BARKE.PROJ.5HG00481590.1","HORVU.BARKE.PROJ.1HG00072850.1"
+  ),
+
+  # --- PROTEIN DEGRADATION ---
+  `Subtilisin-like protease` = c(
+    "HORVU.BARKE.PROJ.7HG00594380.1","HORVU.BARKE.PROJ.5HG00387520.1","HORVU.BARKE.PROJ.7HG00652880.1","HORVU.BARKE.PROJ.3HG00258310.1",
+    "HORVU.BARKE.PROJ.6HG00518840.1","HORVU.BARKE.PROJ.2HG00092410.1","HORVU.BARKE.PROJ.2HG00177680.1","HORVU.BARKE.PROJ.3HG00236140.1",
+    "HORVU.BARKE.PROJ.1HG00045900.1","HORVU.BARKE.PROJ.1HG00053580.1","HORVU.BARKE.PROJ.1HG00052650.1","HORVU.BARKE.PROJ.2HG00171370.1",
+    "HORVU.BARKE.PROJ.2HG00091080.1","HORVU.BARKE.PROJ.4HG00371060.1","HORVU.BARKE.PROJ.6HG00545200.1","HORVU.BARKE.PROJ.2HG00185200.1",
+    "HORVU.BARKE.PROJ.4HG00361750.1","HORVU.BARKE.PROJ.2HG00169600.1","HORVU.BARKE.PROJ.6HG00562150.1","HORVU.BARKE.PROJ.6HG00562050.1",
+    "HORVU.BARKE.PROJ.6HG00562140.1","HORVU.BARKE.PROJ.5HG00768700.1","HORVU.BARKE.PROJ.6HG00504300.1","HORVU.BARKE.PROJ.6HG00561990.1",
+    "HORVU.BARKE.PROJ.6HG00562070.1","HORVU.BARKE.PROJ.4HG00377350.1","HORVU.BARKE.PROJ.1HG00057060.1","HORVU.BARKE.PROJ.5HG00763810.1",
+    "HORVU.BARKE.PROJ.1HG00075820.1","HORVU.BARKE.PROJ.3HG00282630.1","HORVU.BARKE.PROJ.2HG00171120.1","HORVU.BARKE.PROJ.1HG00065070.1",
+    "HORVU.BARKE.PROJ.4HG00357630.1","HORVU.BARKE.PROJ.7HG00646960.1","HORVU.BARKE.PROJ.1HG00053700.1","HORVU.BARKE.PROJ.2HG00101890.1",
+    "HORVU.BARKE.PROJ.6HG00493740.1","HORVU.BARKE.PROJ.7HG00669560.1","HORVU.BARKE.PROJ.5HG00444980.1","HORVU.BARKE.PROJ.6HG00489550.1",
+    "HORVU.BARKE.PROJ.5HG00465760.1","HORVU.BARKE.PROJ.3HG00273400.1","HORVU.BARKE.PROJ.2HG00171140.1","HORVU.BARKE.PROJ.2HG00171130.1",
+    "HORVU.BARKE.PROJ.2HG00153370.1","HORVU.BARKE.PROJ.2HG00185220.1","HORVU.BARKE.PROJ.2HG00185190.1","HORVU.BARKE.PROJ.4HG00313730.1",
+    "HORVU.BARKE.PROJ.5HG00436650.1","HORVU.BARKE.PROJ.2HG00101990.1","HORVU.BARKE.PROJ.7HG00608940.1","HORVU.BARKE.PROJ.3HG00274210.1",
+    "HORVU.BARKE.PROJ.1HG00068460.1","HORVU.BARKE.PROJ.3HG00266160.1","HORVU.BARKE.PROJ.2HG00168300.1","HORVU.BARKE.PROJ.7HG00659580.1",
+    "HORVU.BARKE.PROJ.3HG00268750.1","HORVU.BARKE.PROJ.1HG00082000.1","HORVU.BARKE.PROJ.5HG00452960.1","HORVU.BARKE.PROJ.6HG00521310.1",
+    "HORVU.BARKE.PROJ.3HG00199430.1","HORVU.BARKE.PROJ.6HG00571850.1","HORVU.BARKE.PROJ.7HG00592920.1","HORVU.BARKE.PROJ.7HG00592920.2",
+    "HORVU.BARKE.PROJ.3HG00223220.1","HORVU.BARKE.PROJ.7HG00592910.1","HORVU.BARKE.PROJ.3HG00223260.1","HORVU.BARKE.PROJ.4HG00314900.1",
+    "HORVU.BARKE.PROJ.6HG00506350.1","HORVU.BARKE.PROJ.7HG00592890.1","HORVU.BARKE.PROJ.7HG00592900.1","HORVU.BARKE.PROJ.7HG00592880.1",
+    "HORVU.BARKE.PROJ.4HG00365940.1","HORVU.BARKE.PROJ.2HG00092420.1","HORVU.BARKE.PROJ.5HG00444660.1","HORVU.BARKE.PROJ.3HG00261180.1"
+  ),
+  `Papain-like cysteine proteinase` = c(
+    "HORVU.BARKE.PROJ.6HG00784430.1","HORVU.BARKE.PROJ.6HG00495310.1","HORVU.BARKE.PROJ.6HG00495260.1","HORVU.BARKE.PROJ.6HG00498700.1",
+    "HORVU.BARKE.PROJ.6HG00494350.1","HORVU.BARKE.PROJ.6HG00495680.1","HORVU.BARKE.PROJ.6HG00495640.1","HORVU.BARKE.PROJ.6HG00495690.1",
+    "HORVU.BARKE.PROJ.6HG00495700.1","HORVU.BARKE.PROJ.6HG00495660.1","HORVU.BARKE.PROJ.6HG00495710.1","HORVU.BARKE.PROJ.6HG00495650.1",
+    "HORVU.BARKE.PROJ.1HG00077400.1","HORVU.BARKE.PROJ.6HG00495670.1","HORVU.BARKE.PROJ.7HG00679490.1","HORVU.BARKE.PROJ.7HG00679480.1",
+    "HORVU.BARKE.PROJ.2HG00194010.1","HORVU.BARKE.PROJ.4HG00382300.1","HORVU.BARKE.PROJ.5HG00459870.1","HORVU.BARKE.PROJ.2HG00097640.1",
+    "HORVU.BARKE.PROJ.3HG00208070.1"
+  ),
+  `Aminopeptidase` = c(
+    "HORVU.BARKE.PROJ.4HG00305500.1","HORVU.BARKE.PROJ.5HG00766870.1","HORVU.BARKE.PROJ.5HG00432120.1",
+    "HORVU.BARKE.PROJ.6HG00524520.1","HORVU.BARKE.PROJ.7HG00589820.1"
+  ),
+  `Methionyl-aminopeptidase` = c(
+    "HORVU.BARKE.PROJ.1HG00055420.1","HORVU.BARKE.PROJ.1HG00044760.1","HORVU.BARKE.PROJ.6HG00536050.1",
+    "HORVU.BARKE.PROJ.2HG00129520.1","HORVU.BARKE.PROJ.2HG00174090.1",
+    "HORVU.BARKE.PROJ.6HG00559610.1","HORVU.BARKE.PROJ.7HG00622240.1"
+  ),
+  `Carboxypeptidase` = c(
+    "HORVU.BARKE.PROJ.6HG00499600.1","HORVU.BARKE.PROJ.4HG00364910.2","HORVU.BARKE.PROJ.4HG00304700.1",
+    "HORVU.BARKE.PROJ.4HG00316830.1","HORVU.BARKE.PROJ.2HG00148330.1","HORVU.BARKE.PROJ.1HG00041660.1",
+    "HORVU.BARKE.PROJ.4HG00760680.1","HORVU.BARKE.PROJ.7HG00668820.1","HORVU.BARKE.PROJ.1HG00070610.1"
+  ),
+  `Prolyl endopeptidase` = c(
+    "HORVU.BARKE.PROJ.7HG00679290.1","HORVU.BARKE.PROJ.6HG00538760.1","HORVU.BARKE.PROJ.5HG00444180.1",
+    "HORVU.BARKE.PROJ.6HG00504720.1","HORVU.BARKE.PROJ.2HG00170920.1","HORVU.BARKE.PROJ.5HG00441560.1"
+  ),
+  `Dipeptidyl peptidase` = c("HORVU.BARKE.PROJ.5HG00406500.1"),
+  `Aspartyl aminopeptidase` = c("HORVU.BARKE.PROJ.5HG00436310.1","HORVU.BARKE.PROJ.3HG00298490.1"),
+  `Oligopeptidase` = c(
+    "HORVU.BARKE.PROJ.4HG00757340.1","HORVU.BARKE.PROJ.6HG00573710.1","HORVU.BARKE.PROJ.2HG00713210.1",
+    "HORVU.BARKE.PROJ.2HG00711450.1","HORVU.BARKE.PROJ.2HG00714030.1"
+  ),
+  `Glutamyl endopeptidase` = c("HORVU.BARKE.PROJ.4HG00348310.1","HORVU.BARKE.PROJ.2HG00100820.1"),
+
+  # --- OTHER ---
+  `Catalase` = c("HORVU.BARKE.PROJ.6HG00495590.1","HORVU.BARKE.PROJ.7HG00681400.1","HORVU.BARKE.PROJ.4HG00374170.1"),
+  `Phytase`  = c("HORVU.BARKE.PROJ.5HG00419620.1","HORVU.BARKE.PROJ.3HG00231330.1","HORVU.BARKE.PROJ.5HG00454460.1","HORVU.BARKE.PROJ.5HG00430080.1")
+)
+
+
+
+# -------------------------
+# STEP 4 — Define family-to-category mapping
+# -------------------------
+family_category <- c(
+  "Alpha-amylase"     = "Starch degradation",
+  "Beta-amylase"      = "Starch degradation",
+  "Alpha-glucosidase" = "Starch degradation",
+  "Isoamylase"        = "Starch degradation",
+  
+  "Beta-glucanase"       = "Cell wall degradation",
+  "Beta-glucosidase"     = "Cell wall degradation",
+  "Arabinofuranosidase"  = "Cell wall degradation",
+  "Mannanase"            = "Cell wall degradation",
+  "Alpha-galactosidase"  = "Cell wall degradation",
+  "Polygalacturonase"    = "Cell wall degradation",
+  "Pectin esterase"      = "Cell wall degradation",
+  "Xylan endohydrolase"  = "Cell wall degradation",
+  "Beta-xylosidase"      = "Cell wall degradation",
+  "Chitinase"            = "Cell wall degradation",
+  
+  "Phospholipase A1"         = "Lipid degradation",
+  "Phospholipase A2_Hv"      = "Lipid degradation",
+  "Phospholipase D"          = "Lipid degradation",
+  "Phospholipase C"          = "Lipid degradation",
+  "Lipase"                   = "Lipid degradation",
+  "Lipoxygenase-1"           = "Lipid degradation",
+  "Lipoxygenase-2"           = "Lipid degradation",
+  "Hydroperoxide lyase"      = "Lipid degradation",
+  "Allene oxide synthase_Hv" = "Lipid degradation",
+  
+  "Subtilisin-like protease"        = "Protein degradation",
+  "Papain-like cysteine proteinase" = "Protein degradation",
+  "Aminopeptidase"                  = "Protein degradation",
+  "Methionyl-aminopeptidase"        = "Protein degradation",
+  "Carboxypeptidase"                = "Protein degradation",
+  "Prolyl endopeptidase"            = "Protein degradation",
+  "Dipeptidyl peptidase"            = "Protein degradation",
+  "Aspartyl aminopeptidase"         = "Protein degradation",
+  "Oligopeptidase"                  = "Protein degradation",
+  "Glutamyl endopeptidase"          = "Protein degradation",
+  
+  "Catalase" = "Other",
+  "Phytase"  = "Other"
+)
+
+# -------------------------
+# STEP 5 — Collect proteins per family
+# -------------------------
+malting_rows <- lapply(names(all_families_ID), function(fam) {
+  ids <- all_families_ID[[fam]]
+  sub <- final_HV3TS_mat %>% filter(Protein.IDs_pG %in% ids)
+  if (nrow(sub) > 0) {
+    sub$enzyme_family <- fam
+    sub$Category <- family_category[[fam]]
+    return(sub)
+  } else return(NULL)
+})
+
+malting_all <- bind_rows(malting_rows)
+if (nrow(malting_all) == 0) stop("❌ No proteins found for the provided IDs.")
+
+# -------------------------
+# STEP 6 — Impose the family order (handle duplicates safely)
+# -------------------------
+# Create ordered list of protein IDs according to `all_families_ID`
+ordered_ids <- unlist(all_families_ID, use.names = FALSE)
+
+# Remove duplicated entries while keeping the *first occurrence* to preserve order
+ordered_ids_unique <- ordered_ids[!duplicated(ordered_ids)]
+
+# Filter and reorder malting_all accordingly
+malting_all <- malting_all %>%
+  filter(Protein.IDs_pG %in% ordered_ids_unique) %>%
+  mutate(Protein.IDs_pG = factor(Protein.IDs_pG, levels = ordered_ids_unique)) %>%
+  arrange(factor(Protein.IDs_pG, levels = ordered_ids_unique))
+
+cat(sprintf("✔ Imposed custom enzyme order (%d unique proteins).\n", length(ordered_ids_unique)))
+# -------------------------
+# STEP 7 — Build numeric matrix (keep order)
+# -------------------------
+malting_mat <- as.matrix(malting_all[, ..int_cols])
+mode(malting_mat) <- "numeric"
+malting_mat[!is.finite(malting_mat)] <- NA
+rownames(malting_mat) <- make.unique(as.character(malting_all$Protein.IDs_pG))
+
+# -------------------------
+# STEP 8 — Annotation metadata
+# -------------------------
+annotation_row <- data.frame(
+  Family   = malting_all$enzyme_family,
+  Category = malting_all$Category
+)
+rownames(annotation_row) <- rownames(malting_mat)
+
+family_names <- names(all_families_ID)
+category_names <- unique(family_category)
+
+annotation_row$Family   <- factor(annotation_row$Family,   levels = family_names)
+annotation_row$Category <- factor(annotation_row$Category, levels = category_names)
+
+# -------------------------
+# STEP 9 — Colors
+# -------------------------
+palette <- colorRampPalette(brewer.pal(12, "Set3"))(length(family_names))
+family_colors <- setNames(palette, family_names)
+
+category_colors <- c(
+  "Starch degradation"    = "#FFD92F",
+  "Cell wall degradation" = "#A6D854",
+  "Lipid degradation"     = "#E78AC3",
+  "Protein degradation"   = "#FC8D62",
+  "Other"                 = "#8DA0CB"
+)
+
+ann_colors <- list(Family = family_colors, Category = category_colors)
+
+# -------------------------
+# STEP 10 — Export heatmaps (imposed order, no clustering)
+# -------------------------
+out_dir <- "../../../R_export/HV3TS/malting_enzymes"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+heat_colors <- colorRampPalette(c("#4579F1", "white", "#D73020"))(130)
+
+# JPEG
+jpeg(file.path(out_dir, "HV3TS_allFamilies_ordered.jpeg"), width = 6, height = 10, units = "in", res = 400)
+pheatmap(
+  malting_mat,
+  scale = "row",
+  color= heat_colors, 
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  annotation_row = annotation_row,
+  annotation_colors = ann_colors,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  legend = TRUE,
+  annotation_legend = TRUE,
+  fontsize_row = 6,
+  fontsize_col = 8,
+  # ↓↓↓ reduce legend bar height ↓↓↓
+  legend_labels_angle = 0,
+  legend_key_height = unit(0.01, "cm")   # smaller colorbar height
+)
+dev.off()
+# PDF
+pdf(file.path(out_dir, "HV3TS_allFamilies_ordered.pdf"), width = 6, height = 8)
+pheatmap(
+  malting_mat,
+  scale = "row",
+  color = heat_colors,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  annotation_row = annotation_row,
+  annotation_colors = ann_colors,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  legend = TRUE,
+  annotation_legend = TRUE,
+  fontsize_row = 6,
+  fontsize_col = 8,
+  main = "HV3TS: Enzyme family expression (fixed order, row-scaled log2 intensities)",
+  legend_labels_angle = 0,
+  legend_key_height = unit(0.2, "cm")
+)
+dev.off()
+
+# -------------------------
+# STEP 11 — Heatmap for “Starch degradation” family only
+# -------------------------
+
+# Filter for starch degradation family
+starch_idx <- annotation_row$Category == "Starch degradation"
+malting_mat_starch <- malting_mat[starch_idx, ]
+annotation_row_starch <- annotation_row[starch_idx, , drop = FALSE]
+
+# Output directory
+out_dir_starch <- file.path(out_dir, "starch_only")
+if (!dir.exists(out_dir_starch)) dir.create(out_dir_starch, recursive = TRUE)
+
+# Heatmap color palette (same as before)
+heat_colors <- colorRampPalette(c("#4579F1", "white", "#D73020"))(130)
+
+# --- JPEG export ---
+jpeg(file.path(out_dir_starch, "HV3TS_starchFamily_ordered.jpeg"),
+     width = 8, height = 6, units = "in", res = 400)
+pheatmap(
+  malting_mat_starch,
+  scale = "row",
+  color = heat_colors,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  annotation_row = annotation_row_starch,
+  annotation_colors = ann_colors,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  legend = TRUE,
+  annotation_legend = TRUE,
+  fontsize_row = 7,
+  fontsize_col = 8,
+  legend_breaks = c(-2, -1, 0, 1, 2),
+  legend_labels = c("-2", "-1", "0", "1", "2"),
+  legend_labels_angle = 0,
+  legend_key_height = unit(0.15, "cm")
+)
+dev.off()
+
+# --- PDF export ---
+pdf(file.path(out_dir_starch, "HV3TS_starchFamily_ordered.pdf"),
+    width = 8, height = 6)
+pheatmap(
+  malting_mat_starch,
+  scale = "row",
+  color = heat_colors,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  annotation_row = annotation_row_starch,
+  annotation_colors = ann_colors,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  legend = TRUE,
+  annotation_legend = TRUE,
+  fontsize_row = 7,
+  fontsize_col = 8,
+  main = "HV3TS: Starch degradation enzymes (row-scaled log2 intensities)",
+  legend_breaks = c(-2, -1, 0, 1, 2),
+  legend_labels = c("-2", "-1", "0", "1", "2"),
+  legend_labels_angle = 0,
+  legend_key_height = unit(0.25, "cm")
+)
+dev.off()
+
+
+```
+
+
+
