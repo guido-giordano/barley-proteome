@@ -7,7 +7,6 @@ This project implements a structured workflow to process, integrate, and analyse
 
 ## Features
 - Correlation between enzymatic data and proteomics data
-- Correlation between transcriptomics and proteomics data
 - Correlation between peptidomics and proteomics data for beta-amylase processing
 - Quality control of large-scale proteomics datasets (filtering, consistency checks, summary metrics)  
 - Normalisation of protein intensities across samples and conditions  
@@ -23,4 +22,4 @@ This project implements a structured workflow to process, integrate, and analyse
 - Handles large multi-file datasets typical of proteomics workflows  
 
 ## Future Extensions
-- Integration with transcriptomics datasets  
+- Correlation between transcriptomics and proteomics data
