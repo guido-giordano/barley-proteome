@@ -8,6 +8,8 @@ This project implements a structured workflow to process, integrate, and analyse
 ## Features
 - Correlation between enzymatic data and proteomics data
 - Correlation between peptidomics and proteomics data for beta-amylase processing
+- Correlation between genomic data and proteomics data (copy number variation)
+- Integration of data into orthology frameworks across 20 barley varieties and 4 species
 - Quality control of large-scale proteomics datasets (filtering, consistency checks, summary metrics)  
 - Normalisation of protein intensities across samples and conditions  
 - Integration of protein abundance data across multiple varieties and species  
